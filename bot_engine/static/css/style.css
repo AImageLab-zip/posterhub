@@ -648,7 +648,7 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
   font-size: 0.78em;
   font-weight: 600;
 }
-@media (max-width: 1279px) {
+@media (max-width: 1199.98px) {  /* match Tailwind max-xl (<1200px) */
   .status-form { display: none !important; }
   .status-mob-badge { display: inline-block; }
   .status-mob-badge.status-pending  { background: var(--pending-bg);  color: var(--pending-text); }
@@ -969,12 +969,10 @@ body.upload-page .dark-toggle { bottom: 24px; }
   vertical-align: middle;
 }
 
-.id-cell-icon.icon-warn  { color: #d97706; }
 .id-cell-icon.icon-star  { color: var(--favorite); }
 .icon-star-empty { color: var(--favorite); }
 
-.id-cell-icon.icon-star,
-.id-cell-icon.icon-warn {
+.id-cell-icon.icon-star {
   width: 20px;
   height: 20px;
   min-width: 20px;

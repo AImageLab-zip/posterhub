@@ -1,0 +1,125 @@
+name: posterhub-gcasari
+
+x-db-env: &db-env
+  DB_NAME: ${DB_NAME:-posterhub_dev}
+  DB_USER: ${DB_USER:-posterhub_dev}
+  DB_PASSWORD: ${DB_PASSWORD:-paperpassword}
+  DB_HOST: db
+  DB_PORT: "3306"
+
+x-celery-env: &celery-env
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/2
+  REDIS_CACHE_URL: redis://redis:6379/1
+  CELERY_VISIBILITY_TIMEOUT: "7200"
+  POSTER_PROCESSING_LOCK_TIMEOUT: "7200"
+  CELERY_TASK_SOFT_TIME_LIMIT: "2700"
+  CELERY_TASK_TIME_LIMIT: "3000"
+
+x-common-worker: &common-worker
+  build: .
+  env_file:
+    - .env
+  environment:
+    <<: [*db-env, *celery-env]
+  volumes:
+    - media_data:/app/media
+    - log_data:/app/logs
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks:
+    - backend
+  restart: unless-stopped
+
+services:
+
+  db:
+    image: mysql:8.4
+    container_name: posterhub-gcasari-db
+    restart: unless-stopped
+    # Not published to the host — Django reaches MySQL internally via db:3306.
+    # Production's posterhub-db already owns host port 3306.
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-posterhub_dev}
+      MYSQL_USER: ${DB_USER:-posterhub_dev}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-paperpassword}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  redis:
+    image: redis:7-alpine
+    container_name: posterhub-gcasari-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  django:
+    <<: *common-worker
+    container_name: posterhub-gcasari-django
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn tesi_project.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120"
+    expose:
+      - "8000"
+
+  apache:
+    build:
+      context: ./apache
+    container_name: posterhub-gcasari-apache
+    ports:
+      - "8102:80"
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      - django
+    networks:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    <<: *common-worker
+    container_name: posterhub-gcasari-worker
+    command: celery -A tesi_project worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-2} --max-tasks-per-child=100
+
+  beat:
+    <<: *common-worker
+    container_name: posterhub-gcasari-beat
+    user: root
+    command: celery -A tesi_project beat --loglevel=info --schedule=/app/celerybeat/celerybeat-schedule
+    volumes:
+      - media_data:/app/media
+      - log_data:/app/logs
+      - celerybeat_data:/app/celerybeat
+
+volumes:
+  mysql_data:
+  redis_data:
+  log_data:
+  celerybeat_data:
+  media_data:
+
+networks:
+  backend:
+    driver: bridge

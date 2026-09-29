@@ -42,20 +42,11 @@
                         <span class="id-badge max-xl:tw-text-[0.78em] max-xl:tw-py-[3px] max-xl:tw-px-2 max-xl:tw-rounded-md max-xl:tw-min-w-0">{{ poster.id }}</span>
                         {% if poster.is_new %}<span class="new-badge max-xl:tw-text-[0.68em] max-xl:tw-ml-0 max-xl:tw-py-[3px] max-xl:tw-px-2">NEW</span>{% endif %}
                     </div>
-                    {% if poster.is_incomplete and poster.analysis_status == 'ok' or poster.is_favorite %}
+                    {% if poster.is_favorite %}
                     <div class="id-cell-indicators">
-                        {% if poster.is_incomplete and poster.analysis_status == 'ok' %}
-                            <svg class="id-cell-icon icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" title="Missing paper link or GitHub link">
-                                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                                <line x1="12" y1="9" x2="12" y2="13"/>
-                                <line x1="12" y1="17" x2="12.01" y2="17"/>
-                            </svg>
-                        {% endif %}
-                        {% if poster.is_favorite %}
-                            <svg class="id-cell-icon icon-star" viewBox="0 0 1024 1024" fill="currentColor" title="Starred">
-                                <path d="M908.1 353.1l-253.9-36.9L540.7 86.1c-3.1-6.3-8.2-11.4-14.5-14.5-15.8-7.8-35-1.3-42.9 14.5L369.8 316.2l-253.9 36.9c-7 1-13.4 4.3-18.3 9.3a32.05 32.05 0 0 0 .6 45.3l183.7 179.1-43.4 252.9a31.95 31.95 0 0 0 46.4 33.7L512 754l227.1 119.4c6.2 3.3 13.4 4.4 20.3 3.2 17.4-3 29.1-19.5 26.1-36.9l-43.4-252.9 183.7-179.1c5-4.9 8.3-11.3 9.3-18.3 2.7-17.5-9.5-33.7-27-36.3z"/>
-                            </svg>
-                        {% endif %}
+                        <svg class="id-cell-icon icon-star" viewBox="0 0 1024 1024" fill="currentColor" title="Starred">
+                            <path d="M908.1 353.1l-253.9-36.9L540.7 86.1c-3.1-6.3-8.2-11.4-14.5-14.5-15.8-7.8-35-1.3-42.9 14.5L369.8 316.2l-253.9 36.9c-7 1-13.4 4.3-18.3 9.3a32.05 32.05 0 0 0 .6 45.3l183.7 179.1-43.4 252.9a31.95 31.95 0 0 0 46.4 33.7L512 754l227.1 119.4c6.2 3.3 13.4 4.4 20.3 3.2 17.4-3 29.1-19.5 26.1-36.9l-43.4-252.9 183.7-179.1c5-4.9 8.3-11.3 9.3-18.3 2.7-17.5-9.5-33.7-27-36.3z"/>
+                        </svg>
                     </div>
                     {% endif %}
                 </div>
@@ -63,6 +54,10 @@
 
             {# ── TD3: Title + authors ── #}
             <td class="max-xl:tw-block max-xl:tw-mb-2 max-xl:tw-p-0 max-xl:tw-border-b-0 max-xl:tw-text-[0.88em] max-xl:tw-leading-[1.4]">
+                {# Mobile-only thumbnail above the title; desktop shows it in the Links cell (TD5) #}
+                {% if poster.image %}
+                    <img src="{{ poster.thumbnail_url }}" alt="{{ poster.title }}" class="poster-thumbnail tw-hidden max-xl:tw-block max-xl:!tw-w-auto max-xl:tw-max-w-full max-xl:!tw-max-h-[200px] max-xl:tw-mb-2 max-xl:hover:!tw-transform-none" style="cursor:zoom-in;" onclick="openLightbox('{{ poster.image.url }}')" loading="lazy">
+                {% endif %}
                 <div class="article-title max-xl:tw-text-[0.95em] max-xl:tw-font-semibold max-xl:tw-break-words max-xl:tw-whitespace-normal max-xl:tw-leading-[1.35] max-xl:tw-mb-1">
                     <a href="{% url 'poster_detail' poster.id %}" class="article-title-link max-xl:tw-no-underline max-xl:tw-text-inherit">{{ poster.title }}</a>
                     {% if poster.analysis_status == 'failed' %}
@@ -101,7 +96,7 @@
             </td>
 
             {# ── TD5: Links — inline on mobile ── #}
-            <td class="max-xl:tw-inline-block max-xl:tw-w-auto max-xl:tw-align-middle max-xl:tw-mb-0 max-xl:tw-mr-2 max-xl:tw-p-0 max-xl:tw-border-b-0 max-xl:tw-text-[0.88em] max-xl:tw-leading-[1.4]">
+            <td class="max-xl:tw-inline-flex max-xl:tw-items-center max-xl:tw-w-auto max-xl:tw-align-middle max-xl:tw-my-1 max-xl:tw-mr-2 max-xl:tw-p-0 max-xl:tw-border-b-0 max-xl:tw-text-[0.88em] max-xl:tw-leading-[1.4]">
                 <div class="links-poster-cell">
                     <div class="links-row">
                         {% if poster.paper_link %}
@@ -183,8 +178,8 @@
               {% endif %}
             </td>
 
-            {# ── TD8+TD9: Status + Actions — single row on mobile ── #}
-            <td class="max-xl:!tw-inline-flex max-xl:!tw-items-center max-xl:!tw-pt-2 max-xl:!tw-mt-2 max-xl:!tw-border-t max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)] max-xl:!tw-p-0 max-xl:!tw-border-b-0 max-xl:!tw-w-auto max-xl:!tw-align-middle">
+            {# ── TD8+TD9: Status + Actions — inline with TD5 links on mobile ── #}
+            <td class="max-xl:!tw-inline-flex max-xl:!tw-items-center max-xl:!tw-my-1 max-xl:!tw-mr-2 max-xl:!tw-p-0 max-xl:!tw-border-b-0 max-xl:!tw-w-auto max-xl:!tw-align-middle">
                 <form method="post" action="{% url 'update_status' poster.id %}" class="status-form" data-poster-id="{{ poster.id }}">
                     {% csrf_token %}
                     <select name="status" class="status-select status-{{ poster.validation_status }}" onchange="updateStatus(this)">
@@ -196,7 +191,7 @@
                 <span class="status-mob-badge status-{{ poster.validation_status }}">&#9679; {{ poster.validation_status|capfirst }}</span>
             </td>
 
-            <td class="max-xl:!tw-inline-flex max-xl:!tw-items-center max-xl:!tw-gap-1 max-xl:!tw-pt-2 max-xl:!tw-mt-2 max-xl:!tw-w-auto max-xl:!tw-p-0 max-xl:!tw-border-b-0 max-xl:!tw-align-middle max-xl:!tw-ml-2">
+            <td class="max-xl:!tw-inline-flex max-xl:!tw-items-center max-xl:!tw-gap-1 max-xl:!tw-my-1 max-xl:!tw-w-auto max-xl:!tw-p-0 max-xl:!tw-border-b-0 max-xl:!tw-align-middle">
                 <div class="action-buttons max-xl:!tw-flex-row max-xl:!tw-flex-nowrap max-xl:!tw-gap-1 max-xl:!tw-justify-start">
                     <button class="action-btn favorite-btn max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)] {% if poster.is_favorite %}favorited{% endif %}"
                             onclick="toggleFavorite({{ poster.id }}, this)"
