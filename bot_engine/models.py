@@ -274,9 +274,12 @@ class ResearchPoster(models.Model):
     def generate_thumbnail(self, max_size=300, quality=80, save=False):
         if not self.image:
             return
-        from PIL import Image, UnidentifiedImageError
+        from PIL import Image, ImageOps, UnidentifiedImageError
         try:
-            with self._open_image() as f, Image.open(f) as img:
+            with self._open_image() as f, Image.open(f) as opened:
+                # Bake the EXIF orientation into the pixels: the re-encoded JPEG has no EXIF,
+                # so without this, portrait phone photos would show up sideways.
+                img = ImageOps.exif_transpose(opened)
                 img.thumbnail((max_size, max_size), Image.LANCZOS)
                 buf = io.BytesIO()
                 img.convert("RGB").save(buf, format="JPEG", quality=quality)

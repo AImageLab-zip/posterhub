@@ -506,3 +506,26 @@ class PosterGroupScopeTests(TestCase):
             reverse("dashboard"), fetch_redirect_response=False,
         )
         self.assertFalse(ActivityLog.objects.exists())
+
+
+class ThumbnailOrientationTests(TestCase):
+    def test_thumbnail_applies_exif_orientation(self):
+        import io as _io
+        from PIL import Image
+        from django.core.files.base import ContentFile
+
+        # Landscape pixels (400x200) tagged "rotate 90 CW to display" => displays as portrait.
+        img = Image.new("RGB", (400, 200), "red")
+        exif = Image.Exif()
+        exif[0x0112] = 6
+        buf = _io.BytesIO()
+        img.save(buf, format="JPEG", exif=exif)
+
+        poster = ResearchPoster(title="t")
+        poster.image.save("orient.jpg", ContentFile(buf.getvalue()), save=False)
+        poster.generate_thumbnail(save=False)
+
+        with Image.open(poster.thumbnail) as thumb:
+            self.assertLess(thumb.width, thumb.height)
+        poster.image.delete(save=False)
+        poster.thumbnail.delete(save=False)
