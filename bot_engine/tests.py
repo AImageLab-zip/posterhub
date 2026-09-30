@@ -538,6 +538,43 @@ class PosterGroupScopeTests(TestCase):
         self.assertFalse(ActivityLog.objects.exists())
 
 
+class PrimaryGroupPromotionTests(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        cls.user = get_user_model().objects.create_user(username="promoted")
+        cls.primary, cls.oldest, cls.newest = (
+            ResearchGroup.objects.create(name=name) for name in ("Primary", "Oldest", "Newest")
+        )
+        now = timezone.now()
+        for group, age_days, is_primary in ((cls.primary, 1, True), (cls.oldest, 10, False), (cls.newest, 0, False)):
+            membership = UserGroupMembership.objects.create(user=cls.user, group=group, is_primary=is_primary)
+            UserGroupMembership.objects.filter(pk=membership.pk).update(joined_at=now - timedelta(days=age_days))
+
+    def primary_group(self):
+        return UserGroupMembership.objects.get(user=self.user, is_primary=True).group
+
+    def test_removing_the_primary_promotes_the_oldest_remaining_group(self):
+        UserGroupMembership.objects.get(user=self.user, group=self.primary).delete()
+        self.assertEqual(self.primary_group(), self.oldest)
+
+    def test_deleting_the_primary_group_promotes_the_oldest_remaining_group(self):
+        self.primary.delete()
+        self.assertEqual(self.primary_group(), self.oldest)
+
+    def test_removing_a_secondary_group_keeps_the_primary(self):
+        UserGroupMembership.objects.get(user=self.user, group=self.oldest).delete()
+        self.assertEqual(self.primary_group(), self.primary)
+
+    def test_removing_the_last_group_leaves_no_membership(self):
+        UserGroupMembership.objects.filter(user=self.user).exclude(group=self.primary).delete()
+        UserGroupMembership.objects.get(user=self.user, group=self.primary).delete()
+        self.assertFalse(UserGroupMembership.objects.filter(user=self.user).exists())
+
+
 class ThumbnailOrientationTests(TestCase):
     def test_thumbnail_applies_exif_orientation(self):
         import io as _io
