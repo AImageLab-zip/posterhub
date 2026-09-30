@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Conference Research — PaperProject{% endblock %}
+{% block title %}Conference Research — PosterHub{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="{% static 'css/conference.css' %}?v=20260401a">
@@ -24,14 +24,6 @@
         </div>
 
         <div class="conf-main">
-            {% if not user_can_interact %}
-            <div class="conf-form-card" style="text-align:center;">
-                <div style="font-weight:700; color:var(--text-strong); margin-bottom:6px;">Conference search is locked</div>
-                <div style="font-size:0.9em; color:var(--text-muted); line-height:1.55;">
-                    You will be able to look up your paper at a conference as soon as an administrator adds you to a research group.
-                </div>
-            </div>
-            {% else %}
             <div class="conf-form-card">
                 <form id="confSearchForm" autocomplete="off">
                     {% csrf_token %}
@@ -119,7 +111,6 @@
                     </button>
                 </form>
             </div>
-            {% endif %}
 
             <div class="conf-results-area" id="confResultsArea" style="display:none;">
 
