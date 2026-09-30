@@ -54,6 +54,10 @@ class GroupManagementAccessTests(TestCase):
         client.force_login(self.users[role], backend="django.contrib.auth.backends.ModelBackend")
         return client
 
+    def entry_pages_for(self, role):
+        # Users outside every research group are funnelled to the upload page.
+        return ("upload",) if role.endswith("no_membership") else self.entry_pages
+
     def assert_management_navigation(self, response, *, groups, users):
         self.assertEqual(response.status_code, 200)
         for route, visible in (("group_list", groups), ("user_admin_list", users)):
@@ -75,16 +79,42 @@ class GroupManagementAccessTests(TestCase):
     def test_group_managers_can_find_management_without_research_membership(self):
         for role in self.managers:
             self.sign_in(role)
-            for page in self.entry_pages:
+            for page in self.entry_pages_for(role):
                 with self.subTest(role=role, page=page):
                     self.assert_management_navigation(self.client.get(reverse(page)), groups=True, users=False)
 
     def test_ordinary_users_do_not_see_management_links(self):
         for role in self.ordinary_users:
             self.sign_in(role)
-            for page in self.entry_pages:
+            for page in self.entry_pages_for(role):
                 with self.subTest(role=role, page=page):
                     self.assert_management_navigation(self.client.get(reverse(page)), groups=False, users=False)
+
+    def test_users_without_groups_are_sent_to_the_upload_page(self):
+        for role in ("manager_no_membership", "no_membership"):
+            self.sign_in(role)
+            for page in ("dashboard", "conference", "my_groups"):
+                with self.subTest(role=role, page=page):
+                    self.assertRedirects(self.client.get(reverse(page)), reverse("upload"), fetch_redirect_response=False)
+            response = self.client.get(reverse("upload"))
+            self.assertContains(response, "Uploads and Dashboard are locked")
+            self.assertNotContains(response, "no-groups-banner")
+            self.assertNotContains(response, f'href="{reverse("dashboard")}"')
+            self.assertNotContains(response, f'href="{reverse("my_groups")}"')
+
+    def test_locked_upload_page_shows_the_admin_contact_only_when_configured(self):
+        self.sign_in("no_membership")
+        with override_settings(ADMIN_CONTACT_EMAIL="posterhub-admin@example.org"):
+            response = self.client.get(reverse("upload"))
+            self.assertContains(response, 'href="mailto:posterhub-admin@example.org"')
+            self.assertEqual(
+                self.client.get(reverse("dashboard"), HTTP_X_REQUESTED_WITH="XMLHttpRequest").json()["message"].count(
+                    "posterhub-admin@example.org"
+                ),
+                1,
+            )
+        with override_settings(ADMIN_CONTACT_EMAIL=""):
+            self.assertNotContains(self.client.get(reverse("upload")), "mailto:")
 
     def test_anonymous_visitors_must_sign_in(self):
         for page in self.entry_pages + ("group_list", "user_admin_list"):
@@ -249,16 +279,16 @@ class GroupManagementAccessTests(TestCase):
     def test_role_changes_are_visible_in_an_existing_browser_session(self):
         user = self.users["no_membership"]
         self.sign_in("no_membership")
-        self.assert_management_navigation(self.client.get(reverse("my_groups")), groups=False, users=False)
+        self.assert_management_navigation(self.client.get(reverse("upload")), groups=False, users=False)
         user.groups.add(self.manager_role)
-        self.assert_management_navigation(self.client.get(reverse("my_groups")), groups=True, users=False)
+        self.assert_management_navigation(self.client.get(reverse("upload")), groups=True, users=False)
         self.assertEqual(self.client.get(reverse("group_list")).status_code, 200)
         user.groups.remove(self.manager_role)
-        self.assert_management_navigation(self.client.get(reverse("my_groups")), groups=False, users=False)
+        self.assert_management_navigation(self.client.get(reverse("upload")), groups=False, users=False)
         self.assertRedirects(self.client.get(reverse("group_list")), reverse("dashboard"), fetch_redirect_response=False)
         user.is_superuser = True
         user.save(update_fields=["is_superuser"])
-        self.assert_management_navigation(self.client.get(reverse("my_groups")), groups=True, users=True)
+        self.assert_management_navigation(self.client.get(reverse("upload")), groups=True, users=True)
         self.assertEqual(self.client.get(reverse("user_admin_list")).status_code, 200)
 
     def test_mutation_only_routes_reject_get_requests(self):
@@ -529,3 +559,28 @@ class ThumbnailOrientationTests(TestCase):
             self.assertLess(thumb.width, thumb.height)
         poster.image.delete(save=False)
         poster.thumbnail.delete(save=False)
+
+
+@override_settings(ADMIN_CONTACT_EMAIL="posterhub-admin@example.org")
+class BotAdminContactTests(TestCase):
+
+    def linking_reply(self, platform, email):
+        from . import views
+        with patch.object(views, "send_message") as send:
+            views._handle_link_command(platform, "12345", email)
+        return send.call_args.args[2]
+
+    def test_unknown_email_reply_points_to_the_admin_contact(self):
+        for platform in ("telegram", "whatsapp"):
+            with self.subTest(platform=platform):
+                self.assertIn("posterhub-admin@example.org", self.linking_reply(platform, "nobody@example.org"))
+
+    def test_linked_user_without_group_is_told_whom_to_contact(self):
+        get_user_model().objects.create_user(username="botless", email="botless@example.org")
+        for platform in ("telegram", "whatsapp"):
+            with self.subTest(platform=platform):
+                self.assertIn("posterhub-admin@example.org", self.linking_reply(platform, "botless@example.org"))
+
+    def test_contact_is_omitted_when_not_configured(self):
+        with override_settings(ADMIN_CONTACT_EMAIL=""):
+            self.assertNotIn("Contact", self.linking_reply("telegram", "nobody@example.org"))

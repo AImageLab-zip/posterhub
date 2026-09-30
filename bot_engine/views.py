@@ -89,12 +89,17 @@ def _gate(predicate, on_fail=None):
     return decorator
 
 
+def _admin_contact_hint():
+    email = settings.ADMIN_CONTACT_EMAIL
+    return f" Contact {email} to be added." if email else ""
+
+
 def _no_groups_response(request):
-    msg = "Your account is not in any research group yet. Ask an administrator to add you before using this feature."
+    msg = "Your account is not in any research group yet. Ask an administrator to add you before using this feature." + _admin_contact_hint()
     if _is_ajax(request) or request.method != "GET":
         return JsonResponse({"error": "no_groups", "message": msg}, status=403)
-    messages.warning(request, msg)
-    return redirect("dashboard")
+    # The upload page already explains the locked state, so no flash message.
+    return redirect("upload")
 
 
 _groups_required = _gate(user_can_interact, on_fail=_no_groups_response)
@@ -183,7 +188,7 @@ def _handle_link_command(platform, recipient, payload):
 
     user = _link_bot_account(platform, recipient, email)
     if not user:
-        send_message(platform, recipient, MESSAGE_TEMPLATES["link_no_match"][platform])
+        send_message(platform, recipient, MESSAGE_TEMPLATES["link_no_match"][platform] + _admin_contact_hint())
         return True
 
     primary = (
@@ -196,7 +201,7 @@ def _handle_link_command(platform, recipient, payload):
         _bold, italic, _link = _fmt(platform)
         group_line = f"Primary group: {italic(primary.group.name)}\n"
     else:
-        group_line = MESSAGE_TEMPLATES["link_no_group"][platform] + "\n"
+        group_line = MESSAGE_TEMPLATES["link_no_group"][platform] + _admin_contact_hint() + "\n"
 
     display_name = user.get_full_name() or user.username
     send_message(
@@ -1526,7 +1531,7 @@ def tags_autocomplete(request):
 WEB_UPLOAD_COOLDOWN = 60
 
 
-@login_required(login_url="login")
+@_groups_required
 def conference_view(request):
     return render(request, "conference.html")
 
@@ -1576,7 +1581,7 @@ def upload_poster(request):
     is_ajax = _is_ajax(request)
 
     if not user_can_interact(request.user) and request.method == "POST":
-        msg = "Your account is not in any research group yet. Uploads are disabled until an administrator adds you."
+        msg = "Your account is not in any research group yet. Uploads are disabled until an administrator adds you." + _admin_contact_hint()
         if is_ajax:
             return JsonResponse({"error": "no_groups", "message": msg}, status=403)
         messages.warning(request, msg)
@@ -1760,7 +1765,7 @@ def task_status(request, task_id):
     return JsonResponse(data)
 
 
-@login_required(login_url="login")
+@_groups_required
 def dashboard(request):
     user_memberships = (
         UserGroupMembership.objects
@@ -1869,7 +1874,7 @@ def dashboard(request):
     return render(request, "dashboard.html", context)
 
 
-@login_required(login_url="login")
+@_groups_required
 def poster_detail(request, poster_id):
     poster      = get_accessible_poster_or_404(
         request.user, poster_id, ResearchPoster.objects.select_related("uploaded_by"),
@@ -2242,7 +2247,7 @@ def stop_analysis(request, poster_id):
     return JsonResponse({"success": True, "message": "Analysis stopped"})
 
 
-@login_required(login_url="login")
+@_groups_required
 def dashboard_live_status(request):
     from django.db.models import Max
     user_group_ids = list(
@@ -2299,7 +2304,7 @@ def _csv_safe_cell(value):
     return value
 
 
-@login_required(login_url="login")
+@_groups_required
 def export_approved_csv(request):
     posters  = _get_export_queryset(request)
     filename = f"approved_posters_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -2313,7 +2318,7 @@ def export_approved_csv(request):
     return response
 
 
-@login_required(login_url="login")
+@_groups_required
 def export_approved_json(request):
     posters  = _get_export_queryset(request)
     filename = f"approved_posters_{timezone.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -2678,7 +2683,7 @@ def update_poster_groups(request, poster_id):
     })
 
 
-@login_required(login_url="login")
+@_groups_required
 def my_groups(request):
     memberships = (
         UserGroupMembership.objects

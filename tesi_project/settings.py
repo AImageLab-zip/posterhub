@@ -155,6 +155,8 @@ WHATSAPP_PHONE_ID = os.getenv("WHATSAPP_PHONE_ID")
 WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "")
 WHATSAPP_APP_SECRET = os.getenv("WHATSAPP_APP_SECRET", "")
 TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+# Shown to users who are not in any research group yet; hidden when empty.
+ADMIN_CONTACT_EMAIL = os.getenv("ADMIN_CONTACT_EMAIL", "").strip()
 GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY", "")
 GOOGLE_CSE_CX = os.getenv("GOOGLE_CSE_CX", "")
 
