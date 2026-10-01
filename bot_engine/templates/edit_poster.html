@@ -43,6 +43,19 @@
                     </ul>
                 {% endif %}
             </div>
+            {% if field.name == "summary" %}
+                {% for g in why_groups %}
+                <div class="form-group max-sm:tw-mb-4">
+                    <label for="id_{{ g.field }}" class="max-sm:tw-text-sm max-sm:tw-mb-1.5">Why Useful — {{ g.name }}{% if g.is_primary %} <span class="groups-editor-chip-primary">★</span>{% endif %}</label>
+                    {% if g.has_interests %}
+                        <textarea name="{{ g.field }}" id="id_{{ g.field }}" rows="3">{{ g.text }}</textarea>
+                        <span class="helptext max-sm:tw-text-xs">{% if g.original %}Shown for this group on the poster page and the dashboard. Empty the box to have the AI write a new one the next time the paper is opened.{% else %}Not written yet: the AI will write it the next time the paper is opened for this group, or you can write it here.{% endif %}</span>
+                    {% else %}
+                        <span class="helptext max-sm:tw-text-xs">This group has no research interests, so there is no «Why useful» text for it.</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            {% endif %}
             {% endfor %}
 
             {% if can_edit_groups %}

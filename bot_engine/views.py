@@ -1277,9 +1277,10 @@ def _handle_search_command(platform, recipient, query):
         send_message(platform, recipient, MESSAGE_TEMPLATES["search_usage"][platform])
         return
 
-    scope = _bot_poster_scope(platform, recipient)
-    if scope is None:
+    user = _require_link_or_notify(platform, recipient)
+    if not user:
         return
+    scope = accessible_posters(user)
 
     import html as html_mod
 
@@ -1326,7 +1327,7 @@ def _handle_search_command(platform, recipient, query):
     if year_to:
         qs = qs.filter(publication_year__lte=year_to)
 
-    results = qs.order_by("-created_at")[:5]
+    results = _attach_why_useful_shown(user, qs.order_by("-created_at")[:5])
 
     if not results:
         msg = MESSAGE_TEMPLATES["search_no_results"][platform].replace("{query}", safe_query)
@@ -1349,8 +1350,8 @@ def _handle_search_command(platform, recipient, query):
             lines.append(f"   {p.get_category_display()}")
         lines.append(f"   {paper} • {github}")
 
-        if p.why_useful and p.why_useful.strip():
-            lines.append(f"   💡 {italic(_truncate(p.why_useful.strip(), 80))}")
+        if p.why_useful_shown.strip():
+            lines.append(f"   💡 {italic(_truncate(p.why_useful_shown.strip(), 80))}")
         lines.append("")
 
     send_message(platform, recipient, "\n".join(lines).strip())
@@ -1811,6 +1812,7 @@ def dashboard(request):
     for poster in page_obj:
         poster.is_incomplete = not poster.paper_link or not poster.github_link
         poster.is_favorite   = poster.id in favorite_ids
+    _attach_why_useful_shown(request.user, page_obj.object_list)
 
     subfield_params = _multi(request.GET, "subfield")
     filter_keys = (
@@ -1875,6 +1877,43 @@ def dashboard(request):
     return render(request, "dashboard.html", context)
 
 
+def _default_why_group_ids(user, poster_ids):
+    """Per paper: the group whose «Why useful» this user sees by default. Their primary group
+    if the paper is in it, else the first (by name) of their groups on the paper."""
+    memberships = list(
+        UserGroupMembership.objects.filter(user=user).values_list("group_id", "group__name", "is_primary")
+    )
+    names = {gid: name for gid, name, _ in memberships}
+    primary_id = next((gid for gid, _, is_primary in memberships if is_primary), None)
+    assigned = {}
+    for poster_id, group_id in (
+        ResearchPoster.groups.through.objects
+        .filter(researchposter_id__in=poster_ids, researchgroup_id__in=names)
+        .values_list("researchposter_id", "researchgroup_id")
+    ):
+        assigned.setdefault(poster_id, set()).add(group_id)
+    return {
+        poster_id: primary_id if primary_id in gids else min(gids, key=lambda g: (names[g].casefold(), g))
+        for poster_id, gids in assigned.items()
+    }
+
+
+def _attach_why_useful_shown(user, posters):
+    """Set poster.why_useful_shown: the user's default group's text, else the paper's general copy."""
+    posters = list(posters)
+    default_ids = _default_why_group_ids(user, [p.pk for p in posters])
+    texts = {
+        (poster_id, group_id): text
+        for poster_id, group_id, text in PosterGroupWhyUseful.objects
+        .filter(poster_id__in=list(default_ids), group_id__in=set(default_ids.values()))
+        .values_list("poster_id", "group_id", "why_useful")
+    }
+    for p in posters:
+        group_text = texts.get((p.pk, default_ids.get(p.pk)), "")
+        p.why_useful_shown = group_text if group_text.strip() else (p.why_useful or "")
+    return posters
+
+
 @_groups_required
 def poster_detail(request, poster_id):
     poster      = get_accessible_poster_or_404(
@@ -1887,16 +1926,7 @@ def poster_detail(request, poster_id):
     poster_groups = [{"id": g.pk, "name": g.name} for g in assigned_user_groups]
     poster_group_ids = set(poster.groups.values_list("pk", flat=True))
 
-    default_why_group_id = None
-    if len(assigned_user_groups) == 1:
-        default_why_group_id = assigned_user_groups[0].pk
-    elif len(assigned_user_groups) > 1:
-        primary = UserGroupMembership.objects.filter(user=request.user, is_primary=True).first()
-        assigned_pks = {g.pk for g in assigned_user_groups}
-        if primary and primary.group_id in assigned_pks:
-            default_why_group_id = primary.group_id
-        else:
-            default_why_group_id = assigned_user_groups[0].pk
+    default_why_group_id = _default_why_group_ids(request.user, [poster.pk]).get(poster.pk)
 
     user_groups_for_edit, can_edit_groups = _poster_groups_editor(request.user, poster_group_ids)
 
@@ -1924,9 +1954,22 @@ def edit_poster(request, poster_id):
         next_url = ""
     poster_group_ids = set(poster.groups.values_list("pk", flat=True))
     user_groups_for_edit, can_edit_groups = _poster_groups_editor(request.user, poster_group_ids)
+    why_groups = _why_useful_editor(poster, [g for g in user_groups_for_edit if g["is_assigned"]])
     groups_error = ""
     if request.method == "POST":
         form = PosterEditForm(request.POST, instance=poster)
+        if why_groups:
+            # Each of the caller's groups has its own text; the general copy is not edited here.
+            del form.fields["why_useful"]
+        why_updates = {}
+        for g in why_groups:
+            raw = request.POST.get(g["field"]) if g["has_interests"] else None
+            if raw is None:
+                continue
+            g["text"] = raw
+            new_text = raw.replace("\r\n", "\n").strip()
+            if new_text != g["original"].strip():
+                why_updates[g["id"]] = new_text
         final_group_ids = None
         if can_edit_groups and request.POST.get("groups_submitted"):
             submitted = request.POST.getlist("group_ids")
@@ -1940,6 +1983,17 @@ def edit_poster(request, poster_id):
                 form.save()
                 if final_group_ids is not None and set(final_group_ids) != poster_group_ids:
                     poster.groups.set(final_group_ids)
+                kept_group_ids = set(final_group_ids) if final_group_ids is not None else poster_group_ids
+                for group_id, text in why_updates.items():
+                    if group_id not in kept_group_ids:
+                        continue
+                    if text:
+                        PosterGroupWhyUseful.objects.update_or_create(
+                            poster=poster, group_id=group_id, defaults={"why_useful": text},
+                        )
+                    else:
+                        # An emptied box hands the text back to the AI on the next poster-page view.
+                        PosterGroupWhyUseful.objects.filter(poster=poster, group_id=group_id).delete()
             ActivityLog.objects.create(
                 user=request.user, poster=poster, action="updated",
                 poster_title=poster.title,
@@ -1949,12 +2003,36 @@ def edit_poster(request, poster_id):
             return redirect(next_url or "dashboard")
     else:
         form = PosterEditForm(instance=poster)
+        if why_groups:
+            del form.fields["why_useful"]
     return render(request, "edit_poster.html", {
         "form": form, "poster": poster, "next_url": next_url,
         "user_groups_for_edit": user_groups_for_edit,
         "can_edit_groups": can_edit_groups,
         "groups_error": groups_error,
+        "why_groups": why_groups,
     })
+
+
+def _why_useful_editor(poster, assigned_groups):
+    """One «Why useful» box per caller's group on the paper (primary first), with its current text."""
+    group_ids = [g["id"] for g in assigned_groups]
+    texts = dict(
+        PosterGroupWhyUseful.objects
+        .filter(poster=poster, group_id__in=group_ids)
+        .values_list("group_id", "why_useful")
+    )
+    with_interests = {
+        group_id
+        for group_id, text in ResearchInterest.objects.filter(group_id__in=group_ids).values_list("group_id", "text")
+        if text and text.strip()
+    }
+    return [
+        {"id": g["id"], "name": g["name"], "is_primary": g["is_primary"],
+         "field": f"why_useful_{g['id']}", "has_interests": g["id"] in with_interests,
+         "original": texts.get(g["id"], ""), "text": texts.get(g["id"], "")}
+        for g in assigned_groups
+    ]
 
 
 def _poster_groups_editor(user, poster_group_ids):

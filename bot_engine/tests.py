@@ -9,7 +9,7 @@ from django.urls import reverse
 
 from .access import GROUP_MANAGER_ROLE
 from .models import (
-    ActivityLog, PendingAssignmentDismissal, ResearchGroup, ResearchInterest,
+    ActivityLog, PendingAssignmentDismissal, PosterGroupWhyUseful, ResearchGroup, ResearchInterest,
     ResearchPoster, UserGroupMembership,
 )
 
@@ -640,6 +640,132 @@ class PosterGroupScopeTests(TestCase):
             reverse("dashboard"), fetch_redirect_response=False,
         )
         self.assertFalse(ActivityLog.objects.exists())
+
+
+@override_settings(
+    SHIBBOLETH_AUTH=False,
+    SECURE_SSL_REDIRECT=False,
+    ALLOWED_HOSTS=["testserver"],
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class WhyUsefulPerGroupTests(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.member = User.objects.create_user(username="why_member")
+        cls.admin = User.objects.create_user(username="why_admin", is_superuser=True)
+        cls.vision = ResearchGroup.objects.create(name="Vision")
+        cls.robotics = ResearchGroup.objects.create(name="Robotics")
+        cls.bare = ResearchGroup.objects.create(name="Without interests")
+        ResearchInterest.objects.create(group=cls.vision, text="Segmentation")
+        ResearchInterest.objects.create(group=cls.robotics, text="Grasping")
+        UserGroupMembership.objects.create(user=cls.member, group=cls.vision, is_primary=True)
+        UserGroupMembership.objects.create(user=cls.member, group=cls.robotics)
+        UserGroupMembership.objects.create(user=cls.member, group=cls.bare)
+        cls.poster = ResearchPoster.objects.create(
+            title="Per-group paper", authors="An Author", summary="A summary.",
+            validation_status="approved", why_useful="General copy",
+        )
+        cls.poster.groups.add(cls.vision, cls.robotics, cls.bare)
+        PosterGroupWhyUseful.objects.create(poster=cls.poster, group=cls.vision, why_useful="Vision text")
+        PosterGroupWhyUseful.objects.create(poster=cls.poster, group=cls.robotics, why_useful="Robotics text")
+
+    def sign_in(self, user):
+        self.client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
+
+    def edit(self, **why):
+        return self.client.post(reverse("edit_poster", args=[self.poster.pk]), {
+            "title": self.poster.title, "authors": "An Author", "summary": "A summary.",
+            "category": "other", "validation_status": "approved", **why,
+        })
+
+    def group_text(self, group):
+        entry = PosterGroupWhyUseful.objects.filter(poster=self.poster, group=group).first()
+        return entry.why_useful if entry else None
+
+    def test_the_edit_page_has_one_box_per_group_and_no_general_field(self):
+        self.sign_in(self.member)
+        response = self.client.get(reverse("edit_poster", args=[self.poster.pk]))
+        self.assertContains(response, f'name="why_useful_{self.vision.pk}"')
+        self.assertContains(response, f'name="why_useful_{self.robotics.pk}"')
+        self.assertContains(response, "Vision text")
+        self.assertContains(response, "Robotics text")
+        self.assertNotContains(response, 'name="why_useful"')
+        self.assertNotContains(response, f'name="why_useful_{self.bare.pk}"')
+        self.assertContains(response, "This group has no research interests")
+
+    def test_saving_updates_only_that_groups_text_and_the_poster_page_shows_it(self):
+        self.sign_in(self.member)
+        self.edit(**{f"why_useful_{self.vision.pk}": "Edited vision text\r\n",
+                     f"why_useful_{self.robotics.pk}": "Robotics text"})
+        self.assertEqual(self.group_text(self.vision), "Edited vision text")
+        self.assertEqual(self.group_text(self.robotics), "Robotics text")
+        self.poster.refresh_from_db()
+        self.assertEqual(self.poster.why_useful, "General copy")
+        with patch("bot_engine.views.generate_why_useful") as generate:
+            response = self.client.get(
+                reverse("poster_why_useful_for_group", args=[self.poster.pk]), {"group_id": self.vision.pk},
+            )
+        generate.assert_not_called()
+        self.assertEqual(response.json()["why_useful"], "Edited vision text")
+
+    def test_an_unchanged_box_is_not_rewritten(self):
+        self.sign_in(self.member)
+        before = PosterGroupWhyUseful.objects.get(poster=self.poster, group=self.robotics).updated_at
+        self.edit(**{f"why_useful_{self.robotics.pk}": "Robotics text\r\n"})
+        after = PosterGroupWhyUseful.objects.get(poster=self.poster, group=self.robotics).updated_at
+        self.assertEqual(before, after)
+
+    def test_emptying_a_box_lets_the_ai_write_a_new_text(self):
+        self.sign_in(self.member)
+        self.edit(**{f"why_useful_{self.vision.pk}": "   "})
+        self.assertIsNone(self.group_text(self.vision))
+        with patch("bot_engine.views.generate_why_useful", return_value="Fresh AI text"):
+            response = self.client.get(
+                reverse("poster_why_useful_for_group", args=[self.poster.pk]), {"group_id": self.vision.pk},
+            )
+        self.assertEqual(response.json()["why_useful"], "Fresh AI text")
+
+    def test_a_group_removed_in_the_same_save_keeps_its_old_text(self):
+        self.sign_in(self.member)
+        self.edit(**{
+            "groups_submitted": "1", "group_ids": [self.vision.pk, self.bare.pk],
+            f"why_useful_{self.robotics.pk}": "Should not be saved",
+        })
+        self.assertEqual(set(self.poster.groups.values_list("pk", flat=True)), {self.vision.pk, self.bare.pk})
+        self.assertEqual(self.group_text(self.robotics), "Robotics text")
+
+    def test_the_dashboard_shows_the_users_default_group_text(self):
+        self.sign_in(self.member)
+        response = self.client.get(reverse("dashboard"))
+        self.assertContains(response, "Vision text")
+        self.assertNotContains(response, "General copy")
+        PosterGroupWhyUseful.objects.filter(poster=self.poster, group=self.vision).delete()
+        self.assertContains(self.client.get(reverse("dashboard")), "General copy")
+
+    def test_the_default_group_is_the_primary_else_the_first_by_name(self):
+        from .views import _attach_why_useful_shown
+        self.assertEqual(_attach_why_useful_shown(self.member, [self.poster])[0].why_useful_shown, "Vision text")
+        self.poster.groups.remove(self.vision)
+        poster = ResearchPoster.objects.get(pk=self.poster.pk)
+        self.assertEqual(_attach_why_useful_shown(self.member, [poster])[0].why_useful_shown, "Robotics text")
+        self.assertEqual(_attach_why_useful_shown(self.admin, [poster])[0].why_useful_shown, "General copy")
+
+    def test_a_user_outside_the_papers_groups_still_edits_the_general_copy(self):
+        self.sign_in(self.admin)
+        response = self.client.get(reverse("edit_poster", args=[self.poster.pk]))
+        self.assertContains(response, 'name="why_useful"')
+        self.client.post(reverse("edit_poster", args=[self.poster.pk]), {
+            "title": self.poster.title, "authors": "An Author", "summary": "A summary.",
+            "category": "other", "validation_status": "approved", "why_useful": "Admin general copy",
+        })
+        self.poster.refresh_from_db()
+        self.assertEqual(self.poster.why_useful, "Admin general copy")
 
 
 @override_settings(
