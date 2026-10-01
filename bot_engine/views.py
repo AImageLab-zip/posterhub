@@ -2877,6 +2877,11 @@ def my_groups(request):
         .select_related("group")
         .order_by("-is_primary", "group__name")
     )
+    other_groups = (
+        ResearchGroup.objects
+        .exclude(memberships__user=request.user)
+        .prefetch_related("interests")
+    )
     from urllib.parse import urlparse
     referer_path = urlparse(request.META.get("HTTP_REFERER", "")).path or ""
     back_target = "dashboard"
@@ -2886,6 +2891,7 @@ def my_groups(request):
         back_target = "conference"
     return render(request, "my_groups.html", {
         "memberships": memberships,
+        "other_groups": other_groups,
         "back_target": back_target,
     })
 

@@ -144,6 +144,20 @@ class GroupManagementAccessTests(TestCase):
                     self.assertContains(response, edit_href)
                     self.assertContains(response, "Edit group &amp; interests")
 
+    def test_my_groups_lists_other_groups_with_their_interests(self):
+        other = ResearchGroup.objects.create(name="Other lab")
+        ResearchInterest.objects.create(group=other, text="Robot perception")
+        self.sign_in("member")
+        response = self.client.get(reverse("my_groups"))
+        self.assertContains(response, "Other Groups")
+        self.assertContains(response, "Other lab")
+        self.assertContains(response, "Robot perception")
+        self.assertEqual(
+            [g.pk for g in response.context["other_groups"]],
+            list(ResearchGroup.objects.exclude(memberships__user=self.users["member"]).values_list("pk", flat=True)),
+        )
+        self.assertNotIn(self.group.pk, [g.pk for g in response.context["other_groups"]])
+
     def test_authorized_users_can_open_group_and_interest_forms(self):
         for role in self.superusers + self.managers:
             with self.subTest(role=role):
