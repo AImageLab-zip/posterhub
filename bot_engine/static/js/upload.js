@@ -345,6 +345,21 @@ function showProgress() {
     setProgress(0, label, '');
 }
 
+// Mirrors the server-side check so the user is told before any bytes are uploaded.
+function missingGroupsError() {
+    if (!USER_GROUPS.length) return '';
+    if (selectedFiles.length > 1) {
+        for (var i = 0; i < selectedFiles.length; i++) {
+            if (!ensureFileGroups(selectedFiles[i]).size) {
+                return 'Select at least one group for "' + selectedFiles[i].name + '".';
+            }
+        }
+        return '';
+    }
+    var checked = document.querySelectorAll('#uploadGroupChips input[name="group_ids"]:checked');
+    return checked.length ? '' : 'Select at least one group for this upload.';
+}
+
 document.getElementById('uploadForm').addEventListener('submit', function (e) {
     if (!selectedFiles.length) {
         e.preventDefault();
@@ -353,6 +368,12 @@ document.getElementById('uploadForm').addEventListener('submit', function (e) {
     }
     e.preventDefault();
     dismissError();
+
+    var groupsError = missingGroupsError();
+    if (groupsError) {
+        showError(groupsError);
+        return;
+    }
 
     var submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
