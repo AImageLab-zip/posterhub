@@ -120,6 +120,7 @@
                     <a href="{% url 'group_edit' group.pk %}" class="group-btn">Edit</a>
                     <form method="POST" action="{% url 'group_delete' group.pk %}" style="display:inline;"
                           data-confirm="Delete the group &quot;{{ group.name }}&quot;?&#10;&#10;Its members will lose access to the papers assigned only to this group."
+                          {% if group.delete_warning %}data-confirm-warning="{{ group.delete_warning }}"{% endif %}
                           data-confirm-title="Delete group"
                           data-confirm-label="Delete">
                         {% csrf_token %}

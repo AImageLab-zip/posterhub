@@ -570,6 +570,66 @@ class PosterGroupScopeTests(TestCase):
         self.assertFalse(ActivityLog.objects.exists())
 
 
+@override_settings(
+    SHIBBOLETH_AUTH=False,
+    SECURE_SSL_REDIRECT=False,
+    ALLOWED_HOSTS=["testserver"],
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class GroupDeleteWarningTests(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.doomed = ResearchGroup.objects.create(name="Doomed")
+        cls.other = ResearchGroup.objects.create(name="Other")
+        cls.admin = User.objects.create_user(username="admin", is_superuser=True)
+        UserGroupMembership.objects.create(user=cls.admin, group=cls.doomed, is_primary=True)
+        for first, last in (("Anna", "Bianchi"), ("Bruno", "Rossi"), ("Carla", "Verdi"), ("Dario", "Neri"), ("Elena", "Gallo")):
+            user = User.objects.create_user(username=first.lower(), first_name=first, last_name=last)
+            UserGroupMembership.objects.create(user=user, group=cls.doomed, is_primary=True)
+        cls.in_both = User.objects.create_user(username="both", first_name="Zeno", last_name="Both")
+        UserGroupMembership.objects.create(user=cls.in_both, group=cls.doomed, is_primary=True)
+        UserGroupMembership.objects.create(user=cls.in_both, group=cls.other)
+
+        only_doomed = [ResearchPoster.objects.create(title=f"Only doomed {i}") for i in range(2)]
+        shared = ResearchPoster.objects.create(title="Shared")
+        for poster in only_doomed:
+            poster.groups.add(cls.doomed)
+        shared.groups.add(cls.doomed, cls.other)
+
+    def warnings(self):
+        from .views import _group_delete_warnings
+        return _group_delete_warnings([self.doomed.pk, self.other.pk])
+
+    def test_warning_counts_orphaned_papers_and_lists_stranded_users(self):
+        warning = self.warnings()[self.doomed.pk]
+        self.assertIn("2 papers will be left without any group", warning)
+        self.assertIn("These users will be left without any group", warning)
+        self.assertIn(": Anna Bianchi, Bruno Rossi, Carla Verdi and 2 others.", warning)
+        self.assertNotIn("Zeno", warning)
+
+    def test_group_whose_deletion_strands_nothing_has_no_warning(self):
+        self.assertNotIn(self.other.pk, self.warnings())
+
+    def test_singular_wording_and_no_overflow_suffix(self):
+        UserGroupMembership.objects.filter(group=self.doomed, user__username__in=["anna", "bruno", "carla", "dario"]).delete()
+        ResearchPoster.objects.filter(title="Only doomed 1").delete()
+        warning = self.warnings()[self.doomed.pk]
+        self.assertIn("1 paper will be left", warning)
+        self.assertIn("This user will be left without any group and will no longer be able to upload or see posters: Elena Gallo.", warning)
+        self.assertNotIn("others", warning)
+
+    def test_group_list_puts_the_warning_in_the_delete_dialog(self):
+        self.client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
+        response = self.client.get(reverse("group_list"))
+        self.assertContains(response, 'data-confirm-warning="⚠ 2 papers will be left without any group')
+
+
 class PrimaryGroupPromotionTests(TestCase):
 
     @classmethod

@@ -2382,9 +2382,14 @@ def group_list(request):
         .order_by("-date_joined", "username")
     )
 
+    groups = list(page_obj.object_list)
+    delete_warnings = _group_delete_warnings([g.pk for g in groups])
+    for g in groups:
+        g.delete_warning = delete_warnings.get(g.pk, "")
+
     paginate_qs_base = f"q={search}" if search else ""
     return render(request, "groups/group_list.html", {
-        "groups": page_obj.object_list,
+        "groups": groups,
         "all_users": all_users,
         "pending_users": pending_users,
         "search_query": search,
@@ -2393,6 +2398,55 @@ def group_list(request):
         "paginate_label": "groups",
         "paginate_qs_base": paginate_qs_base,
     })
+
+
+def _group_delete_warnings(group_ids, max_names=3):
+    """Per group: what deleting it leaves behind (papers with no group, non-admin users with no group)."""
+    PosterGroups = ResearchGroup.posters.through
+    single_group_posters = (
+        PosterGroups.objects.values("researchposter_id")
+        .annotate(n=Count("id")).filter(n=1).values("researchposter_id")
+    )
+    orphan_papers = dict(
+        PosterGroups.objects
+        .filter(researchgroup_id__in=group_ids, researchposter_id__in=single_group_posters)
+        .values("researchgroup_id").annotate(n=Count("id"))
+        .values_list("researchgroup_id", "n")
+    )
+    stranded_users = {}
+    last_memberships = (
+        UserGroupMembership.objects
+        .filter(group_id__in=group_ids, user__is_superuser=False)
+        .annotate(n=Count("user__group_memberships")).filter(n=1)
+        .select_related("user")
+        .order_by("user__first_name", "user__last_name", "user__username")
+    )
+    for m in last_memberships:
+        stranded_users.setdefault(m.group_id, []).append(m.user.get_full_name().title() or m.user.username)
+
+    warnings = {}
+    for gid in group_ids:
+        lines = []
+        papers = orphan_papers.get(gid, 0)
+        if papers:
+            label = "paper" if papers == 1 else "papers"
+            lines.append(
+                f"⚠ {papers} {label} will be left without any group and will no longer be "
+                f"visible to anyone except admins."
+            )
+        names = stranded_users.get(gid, [])
+        if names:
+            shown = ", ".join(names[:max_names])
+            if len(names) > max_names:
+                shown += f" and {len(names) - max_names} others"
+            label = "This user" if len(names) == 1 else "These users"
+            lines.append(
+                f"⚠ {label} will be left without any group and will no longer be able to "
+                f"upload or see posters: {shown}."
+            )
+        if lines:
+            warnings[gid] = "\n\n".join(lines)
+    return warnings
 
 
 def _split_interests(blob):
