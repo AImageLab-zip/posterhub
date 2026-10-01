@@ -20,6 +20,7 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -1897,21 +1898,7 @@ def poster_detail(request, poster_id):
         else:
             default_why_group_id = assigned_user_groups[0].pk
 
-    user_memberships = (
-        UserGroupMembership.objects
-        .filter(user=request.user)
-        .select_related("group")
-        .order_by("-is_primary", "group__name")
-    )
-    user_groups_for_edit = [
-        {"id": m.group.pk, "name": m.group.name, "is_primary": m.is_primary,
-         "is_assigned": m.group.pk in poster_group_ids}
-        for m in user_memberships
-    ]
-    can_edit_groups = (
-        request.user.is_superuser
-        or any(g["is_assigned"] for g in user_groups_for_edit)
-    )
+    user_groups_for_edit, can_edit_groups = _poster_groups_editor(request.user, poster_group_ids)
 
     return render(request, "poster_detail.html", {
         "poster":         poster,
@@ -1935,10 +1922,24 @@ def edit_poster(request, poster_id):
         next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure(),
     ):
         next_url = ""
+    poster_group_ids = set(poster.groups.values_list("pk", flat=True))
+    user_groups_for_edit, can_edit_groups = _poster_groups_editor(request.user, poster_group_ids)
+    groups_error = ""
     if request.method == "POST":
         form = PosterEditForm(request.POST, instance=poster)
-        if form.is_valid():
-            form.save()
+        final_group_ids = None
+        if can_edit_groups and request.POST.get("groups_submitted"):
+            submitted = request.POST.getlist("group_ids")
+            for g in user_groups_for_edit:
+                g["is_assigned"] = str(g["id"]) in submitted
+            final_group_ids = _resolve_poster_group_ids(request.user, poster_group_ids, submitted)
+            if final_group_ids is None:
+                groups_error = "Select at least one group."
+        if form.is_valid() and not groups_error:
+            with transaction.atomic():
+                form.save()
+                if final_group_ids is not None and set(final_group_ids) != poster_group_ids:
+                    poster.groups.set(final_group_ids)
             ActivityLog.objects.create(
                 user=request.user, poster=poster, action="updated",
                 poster_title=poster.title,
@@ -1948,7 +1949,47 @@ def edit_poster(request, poster_id):
             return redirect(next_url or "dashboard")
     else:
         form = PosterEditForm(instance=poster)
-    return render(request, "edit_poster.html", {"form": form, "poster": poster, "next_url": next_url})
+    return render(request, "edit_poster.html", {
+        "form": form, "poster": poster, "next_url": next_url,
+        "user_groups_for_edit": user_groups_for_edit,
+        "can_edit_groups": can_edit_groups,
+        "groups_error": groups_error,
+    })
+
+
+def _poster_groups_editor(user, poster_group_ids):
+    """The caller's groups as editor chips, and whether they may change the paper's groups."""
+    memberships = (
+        UserGroupMembership.objects
+        .filter(user=user)
+        .select_related("group")
+        .order_by("-is_primary", "group__name")
+    )
+    chips = [
+        {"id": m.group.pk, "name": m.group.name, "is_primary": m.is_primary,
+         "is_assigned": m.group.pk in poster_group_ids}
+        for m in memberships
+    ]
+    return chips, user.is_superuser or any(g["is_assigned"] for g in chips)
+
+
+def _resolve_poster_group_ids(user, current_group_ids, raw_ids):
+    """Final group ids for a paper: requested ids limited to the caller's groups, plus any
+    groups the caller is not in (never detached). None when nothing would be left."""
+    user_group_ids = set(
+        UserGroupMembership.objects.filter(user=user).values_list("group_id", flat=True)
+    )
+    requested = set()
+    for gid in raw_ids:
+        try:
+            requested.add(int(gid))
+        except (ValueError, TypeError):
+            continue
+    allowed_new = requested & user_group_ids
+    preserved = set(current_group_ids) - user_group_ids
+    if not allowed_new and not preserved:
+        return None
+    return sorted(allowed_new | preserved)
 
 
 @_groups_required
@@ -2705,18 +2746,9 @@ def update_poster_groups(request, poster_id):
     if not isinstance(raw_ids, list):
         raw_ids = []
 
-    requested = set()
-    for gid in raw_ids:
-        try:
-            requested.add(int(gid))
-        except (ValueError, TypeError):
-            continue
-
-    allowed_new = requested & user_group_ids
-    preserved = current_group_ids - user_group_ids
-    if not allowed_new and not preserved:
+    final_ids = _resolve_poster_group_ids(request.user, current_group_ids, raw_ids)
+    if final_ids is None:
         return JsonResponse({"success": False, "message": "Select at least one group."}, status=400)
-    final_ids = sorted(allowed_new | preserved)
 
     poster.groups.set(final_ids)
 

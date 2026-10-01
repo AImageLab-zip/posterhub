@@ -552,6 +552,37 @@ class PosterGroupScopeTests(TestCase):
         self.assertEqual(set(self.foreign.groups.values_list("pk", flat=True)), {self.other_team.pk})
         self.assertEqual([g["id"] for g in response.json()["user_groups"]], [])
 
+    def edit_with_groups(self, poster, group_ids):
+        return self.client.post(
+            reverse("edit_poster", args=[poster.pk]),
+            {"title": poster.title, "authors": "An Author", "summary": "A summary.",
+             "category": "other", "validation_status": "approved",
+             "groups_submitted": "1", "group_ids": group_ids},
+        )
+
+    def test_the_edit_form_reassigns_groups_within_the_callers_own(self):
+        UserGroupMembership.objects.create(user=self.teammate, group=self.other_team)
+        self.sign_in(self.teammate)
+        self.assertContains(
+            self.client.get(reverse("edit_poster", args=[self.shared.pk])), 'name="group_ids"',
+        )
+        response = self.edit_with_groups(self.shared, [self.other_team.pk])
+        self.assertRedirects(response, reverse("dashboard"), fetch_redirect_response=False)
+        self.assertEqual(set(self.shared.groups.values_list("pk", flat=True)), {self.other_team.pk})
+
+    def test_the_edit_form_refuses_to_leave_a_paper_without_groups(self):
+        self.sign_in(self.teammate)
+        response = self.edit_with_groups(self.shared, [])
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Select at least one group.")
+        self.assertEqual(set(self.shared.groups.values_list("pk", flat=True)), {self.team.pk})
+
+    def test_the_edit_form_keeps_groups_the_caller_is_not_in(self):
+        self.foreign.groups.add(self.team)
+        self.sign_in(self.teammate)
+        self.edit_with_groups(self.foreign, [self.other_team.pk])
+        self.assertEqual(set(self.foreign.groups.values_list("pk", flat=True)), {self.other_team.pk})
+
     def test_clearing_the_activity_log_is_reserved_to_managers(self):
         ActivityLog.objects.create(action="created", poster_title="Shared team paper")
         for user in (self.owner, self.teammate, self.outsider):

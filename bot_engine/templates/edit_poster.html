@@ -22,7 +22,7 @@
             </h1>
         </div>
 
-        {% if form.errors %}
+        {% if form.errors or groups_error %}
             <div class="edit-error max-sm:tw-text-xs max-sm:tw-p-2.5">Please correct the errors below.</div>
         {% endif %}
 
@@ -44,6 +44,27 @@
                 {% endif %}
             </div>
             {% endfor %}
+
+            {% if can_edit_groups %}
+            <div class="form-group max-sm:tw-mb-4">
+                <label class="max-sm:tw-text-sm max-sm:tw-mb-1.5">Groups</label>
+                <input type="hidden" name="groups_submitted" value="1">
+                <div class="groups-editor-chips">
+                    {% for g in user_groups_for_edit %}
+                        <label class="groups-editor-chip">
+                            <input type="checkbox" name="group_ids" value="{{ g.id }}" {% if g.is_assigned %}checked{% endif %}>
+                            {{ g.name }}{% if g.is_primary %} <span class="groups-editor-chip-primary">★</span>{% endif %}
+                        </label>
+                    {% empty %}
+                        <span class="groups-editor-empty">You don't belong to any group yet.</span>
+                    {% endfor %}
+                </div>
+                <span class="helptext max-sm:tw-text-xs">Only your own groups are listed; groups you are not in stay unchanged.</span>
+                {% if groups_error %}
+                    <ul class="errorlist max-sm:tw-text-xs"><li>{{ groups_error }}</li></ul>
+                {% endif %}
+            </div>
+            {% endif %}
 
             <div class="edit-actions max-sm:tw-flex-col max-sm:tw-gap-2.5 max-sm:tw-mt-5">
                 <button type="submit" class="btn max-sm:tw-w-full max-sm:tw-h-11 max-sm:tw-text-sm">Save Changes</button>
