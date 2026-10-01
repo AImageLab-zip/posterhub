@@ -78,7 +78,7 @@
                     <span style="font-size:0.8em; color:var(--text-faint); font-style:italic;">Create a group first</span>
                     {% endif %}
                     <form method="POST" action="{% url 'dismiss_pending_user' u.pk %}" style="display:inline;"
-                          data-confirm="Skip {{ u.get_full_name|default:u.username|escapejs }} for now?&#10;&#10;They will stay logged in but won't appear in this pending list. They will not be able to use the platform until you eventually add them to a group."
+                          data-confirm="Skip {{ u.get_full_name|default:u.username }} for now?&#10;&#10;They will stay logged in but won't appear in this pending list. They will not be able to use the platform until you eventually add them to a group."
                           data-confirm-title="Skip user"
                           data-confirm-label="Skip">
                         {% csrf_token %}
@@ -119,7 +119,7 @@
                 <div class="group-actions">
                     <a href="{% url 'group_edit' group.pk %}" class="group-btn">Edit</a>
                     <form method="POST" action="{% url 'group_delete' group.pk %}" style="display:inline;"
-                          data-confirm="Delete the group &quot;{{ group.name|escapejs }}&quot;?&#10;&#10;Its members will lose access to the papers assigned only to this group."
+                          data-confirm="Delete the group &quot;{{ group.name }}&quot;?&#10;&#10;Its members will lose access to the papers assigned only to this group."
                           data-confirm-title="Delete group"
                           data-confirm-label="Delete">
                         {% csrf_token %}

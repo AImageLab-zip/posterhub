@@ -204,6 +204,38 @@ class GroupManagementAccessTests(TestCase):
                 self.assertRedirects(response, reverse("group_edit", args=[self.group.pk]), fetch_redirect_response=False)
                 self.assertFalse(UserGroupMembership.objects.filter(user=target, group=self.group).exists())
 
+    def test_removal_dialog_warns_only_when_it_is_the_users_last_group(self):
+        warning = "This is the user's last group"
+        edit_url = reverse("group_edit", args=[self.group.pk])
+        self.sign_in("super_no_membership")
+
+        def warned(user):
+            response = self.client.get(edit_url)
+            action = reverse("group_remove_member", args=[self.group.pk, user.pk])
+            form = response.content.decode().split(f'action="{action}"', 1)[1].split(">", 1)[0]
+            return warning in form
+
+        self.assertTrue(warned(self.users["member"]))
+        self.assertTrue(warned(self.users["manager_member"]))
+        self.assertFalse(warned(self.users["super_member"]))
+
+        other = ResearchGroup.objects.create(name="Second research group")
+        UserGroupMembership.objects.create(user=self.users["member"], group=other)
+        self.assertFalse(warned(self.users["member"]))
+
+    def test_apostrophes_in_data_attributes_are_html_escaped_not_js_escaped(self):
+        member = self.users["member"]
+        member.first_name, member.last_name = "Anna", "D'Angelo"
+        member.save()
+        self.sign_in("super_no_membership")
+        response = self.client.get(reverse("group_edit", args=[self.group.pk]))
+        self.assertContains(response, 'data-confirm="Remove Anna D&#x27;Angelo from the group')
+        self.assertNotContains(response, "\\u0027")
+
+        self.sign_in("member")
+        response = self.client.get(reverse("dashboard"), {"search": "Alzheimer's"})
+        self.assertContains(response, 'data-search-query="Alzheimer&#x27;s"')
+
     def test_ordinary_users_cannot_open_management_pages_directly(self):
         for role in self.ordinary_users:
             self.sign_in(role)

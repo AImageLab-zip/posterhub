@@ -2441,7 +2441,10 @@ def group_edit(request, group_id):
     return render(request, "groups/group_edit.html", {
         "group": group,
         "all_users": all_users,
-        "current_members": list(group.memberships.select_related("user").all()),
+        "current_members": list(
+            group.memberships.select_related("user")
+            .annotate(user_group_count=Count("user__group_memberships"))
+        ),
         "interests": list(group.interests.all()),
     })
 

@@ -23,7 +23,7 @@
             },
         }
     </script>
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260929b">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20261001a">
     {% block extra_head %}{% endblock %}
     <script>
         try {
@@ -95,6 +95,7 @@
                 <span id="confirmModalTitleText">Confirm action</span>
             </h3>
             <p id="confirmModalBody" style="white-space:pre-line;"></p>
+            <div id="confirmModalWarning" class="modal-warning" role="alert" hidden></div>
             <div class="modal-actions">
                 <button type="button" id="confirmModalCancel" class="btn">Cancel</button>
                 <button type="button" id="confirmModalOk" class="btn delete-confirm-btn">Confirm</button>
@@ -107,6 +108,7 @@
             var modal = document.getElementById('confirmModal');
             var titleEl = document.getElementById('confirmModalTitleText');
             var bodyEl = document.getElementById('confirmModalBody');
+            var warningEl = document.getElementById('confirmModalWarning');
             var okBtn = document.getElementById('confirmModalOk');
             var cancelBtn = document.getElementById('confirmModalCancel');
             var pending = null;
@@ -115,9 +117,11 @@
                 modal.style.display = 'none';
                 pending = null;
             }
-            function show(title, body, confirmLabel, onConfirm) {
+            function show(title, body, confirmLabel, onConfirm, warning) {
                 titleEl.textContent = title || 'Confirm action';
                 bodyEl.textContent = body || 'Are you sure?';
+                warningEl.textContent = warning || '';
+                warningEl.hidden = !warning;
                 okBtn.textContent = confirmLabel || 'Confirm';
                 pending = onConfirm;
                 modal.style.display = '';
@@ -146,7 +150,8 @@
                     function () {
                         form.dataset.confirmed = '1';
                         form.submit();
-                    }
+                    },
+                    form.dataset.confirmWarning
                 );
             }, true);
 

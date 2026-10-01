@@ -56,7 +56,7 @@
                     <button type="submit" class="group-btn small primary">Save</button>
                 </form>
                 <form method="POST" action="{% url 'interest_delete' i.pk %}" class="delete-form"
-                      data-confirm="Delete this research interest?&#10;&#10;{{ i.text|escapejs }}"
+                      data-confirm="Delete this research interest?&#10;&#10;{{ i.text }}"
                       data-confirm-title="Delete interest"
                       data-confirm-label="Delete">
                     {% csrf_token %}
@@ -91,7 +91,8 @@
                     <span class="member-badge" title="This is the user's primary group">&#9733; Primary for this user</span>
                 {% endif %}
                 <form method="POST" action="{% url 'group_remove_member' group.pk m.user.pk %}" style="display:inline;"
-                      data-confirm="Remove {{ m.user.get_full_name|default:m.user.username|escapejs }} from the group &quot;{{ group.name|escapejs }}&quot;?"
+                      data-confirm="Remove {{ m.user.get_full_name|default:m.user.username }} from the group &quot;{{ group.name }}&quot;?"
+                      {% if m.user_group_count == 1 and not m.user.is_superuser %}data-confirm-warning="⚠ This is the user's last group: once removed, they will no longer be able to upload or see posters until they are added to a group again."{% endif %}
                       data-confirm-title="Remove member"
                       data-confirm-label="Remove">
                     {% csrf_token %}
