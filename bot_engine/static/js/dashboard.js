@@ -1314,16 +1314,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
 
-    const toast = document.getElementById('toast');
-    if (toast) {
-        const delay = toast.classList.contains('toast-warning') ? 5000 : 3000;
-        setTimeout(() => {
-            toast.classList.add('toast-hide');
-            setTimeout(() => toast.remove(), 300);
-        }, delay);
-    }
-
-
     if (localStorage.getItem('activitySidebarHidden') === 'true') {
         const al = document.getElementById('activityList');
         const tb = document.getElementById('toggleActivityBtn');

@@ -5,6 +5,8 @@
 
 
 {% block content %}
+{% include '_toasts.html' %}
+
 <div class="container dashboard">
     <div class="groups-container">
 
@@ -31,16 +33,6 @@
             {{ groups|length }} result{{ groups|length|pluralize }} for &ldquo;{{ search_query }}&rdquo;
             <a href="{% url 'group_list' %}">Clear</a>
         </div>
-        {% endif %}
-
-        {% if messages %}
-        {% for message in messages %}
-        <div class="flash-alert {{ message.tags }}">
-            <span>{% if message.tags == 'success' %}&#10003;{% elif message.tags == 'error' %}&#10005;{% else %}&#8505;{% endif %}</span>
-            <span>{{ message }}</span>
-            <button type="button" class="flash-close" onclick="this.parentElement.remove()" aria-label="Close">&#10005;</button>
-        </div>
-        {% endfor %}
         {% endif %}
 
         {% if pending_users %}
@@ -78,7 +70,7 @@
                     <span style="font-size:0.8em; color:var(--text-faint); font-style:italic;">Create a group first</span>
                     {% endif %}
                     <form method="POST" action="{% url 'dismiss_pending_user' u.pk %}" style="display:inline;"
-                          data-confirm="Skip {{ u.get_full_name|default:u.username|escapejs }} for now?&#10;&#10;They will stay logged in but won't appear in this pending list. They will not be able to use the platform until you eventually add them to a group."
+                          data-confirm="Skip {{ u.get_full_name|default:u.username }} for now?&#10;&#10;They will stay logged in but won't appear in this pending list. They will not be able to use the platform until you eventually add them to a group."
                           data-confirm-title="Skip user"
                           data-confirm-label="Skip">
                         {% csrf_token %}
@@ -119,7 +111,8 @@
                 <div class="group-actions">
                     <a href="{% url 'group_edit' group.pk %}" class="group-btn">Edit</a>
                     <form method="POST" action="{% url 'group_delete' group.pk %}" style="display:inline;"
-                          data-confirm="Delete the group &quot;{{ group.name|escapejs }}&quot;?&#10;&#10;Its members will lose access to the papers assigned only to this group."
+                          data-confirm="Delete the group &quot;{{ group.name }}&quot;?&#10;&#10;Its members will lose access to the papers assigned only to this group."
+                          {% if group.delete_warning %}data-confirm-warning="{{ group.delete_warning }}"{% endif %}
                           data-confirm-title="Delete group"
                           data-confirm-label="Delete">
                         {% csrf_token %}

@@ -141,18 +141,18 @@
                 <span class="text-muted" style="font-size:0.82em; font-style:italic;">Analyzing&hellip;</span>
               {% else %}
                 <div class="inline-notes" id="notes-container-{{ poster.id }}">
-                    {% if poster.why_useful %}
+                    {% if poster.why_useful_shown %}
                         <div id="why-display-{{ poster.id }}" style="margin-bottom:6px;">
-                            {% if poster.why_useful|length > 200 %}
+                            {% if poster.why_useful_shown|length > 200 %}
                                 <div class="expandable-text">
-                                    <span class="text-preview" id="why-preview-{{ poster.id }}">{{ poster.why_useful|slice:"0:200" }}...</span>
-                                    <span class="text-full" id="why-full-{{ poster.id }}" style="display: none;">{{ poster.why_useful }}</span>
+                                    <span class="text-preview" id="why-preview-{{ poster.id }}">{{ poster.why_useful_shown|slice:"0:200" }}...</span>
+                                    <span class="text-full" id="why-full-{{ poster.id }}" style="display: none;">{{ poster.why_useful_shown }}</span>
                                     <a href="javascript:void(0)" class="read-more-btn" onclick="toggleText('why', {{ poster.id }})">
                                         <span id="why-btn-{{ poster.id }}">&#8595; Read more</span>
                                     </a>
                                 </div>
                             {% else %}
-                                {{ poster.why_useful }}
+                                {{ poster.why_useful_shown }}
                             {% endif %}
                         </div>
                     {% endif %}

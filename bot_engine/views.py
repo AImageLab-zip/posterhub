@@ -20,6 +20,7 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -1276,9 +1277,10 @@ def _handle_search_command(platform, recipient, query):
         send_message(platform, recipient, MESSAGE_TEMPLATES["search_usage"][platform])
         return
 
-    scope = _bot_poster_scope(platform, recipient)
-    if scope is None:
+    user = _require_link_or_notify(platform, recipient)
+    if not user:
         return
+    scope = accessible_posters(user)
 
     import html as html_mod
 
@@ -1325,7 +1327,7 @@ def _handle_search_command(platform, recipient, query):
     if year_to:
         qs = qs.filter(publication_year__lte=year_to)
 
-    results = qs.order_by("-created_at")[:5]
+    results = _attach_why_useful_shown(user, qs.order_by("-created_at")[:5])
 
     if not results:
         msg = MESSAGE_TEMPLATES["search_no_results"][platform].replace("{query}", safe_query)
@@ -1348,8 +1350,8 @@ def _handle_search_command(platform, recipient, query):
             lines.append(f"   {p.get_category_display()}")
         lines.append(f"   {paper} • {github}")
 
-        if p.why_useful and p.why_useful.strip():
-            lines.append(f"   💡 {italic(_truncate(p.why_useful.strip(), 80))}")
+        if p.why_useful_shown.strip():
+            lines.append(f"   💡 {italic(_truncate(p.why_useful_shown.strip(), 80))}")
         lines.append("")
 
     send_message(platform, recipient, "\n".join(lines).strip())
@@ -1810,6 +1812,7 @@ def dashboard(request):
     for poster in page_obj:
         poster.is_incomplete = not poster.paper_link or not poster.github_link
         poster.is_favorite   = poster.id in favorite_ids
+    _attach_why_useful_shown(request.user, page_obj.object_list)
 
     subfield_params = _multi(request.GET, "subfield")
     filter_keys = (
@@ -1874,6 +1877,43 @@ def dashboard(request):
     return render(request, "dashboard.html", context)
 
 
+def _default_why_group_ids(user, poster_ids):
+    """Per paper: the group whose «Why useful» this user sees by default. Their primary group
+    if the paper is in it, else the first (by name) of their groups on the paper."""
+    memberships = list(
+        UserGroupMembership.objects.filter(user=user).values_list("group_id", "group__name", "is_primary")
+    )
+    names = {gid: name for gid, name, _ in memberships}
+    primary_id = next((gid for gid, _, is_primary in memberships if is_primary), None)
+    assigned = {}
+    for poster_id, group_id in (
+        ResearchPoster.groups.through.objects
+        .filter(researchposter_id__in=poster_ids, researchgroup_id__in=names)
+        .values_list("researchposter_id", "researchgroup_id")
+    ):
+        assigned.setdefault(poster_id, set()).add(group_id)
+    return {
+        poster_id: primary_id if primary_id in gids else min(gids, key=lambda g: (names[g].casefold(), g))
+        for poster_id, gids in assigned.items()
+    }
+
+
+def _attach_why_useful_shown(user, posters):
+    """Set poster.why_useful_shown: the user's default group's text, else the paper's general copy."""
+    posters = list(posters)
+    default_ids = _default_why_group_ids(user, [p.pk for p in posters])
+    texts = {
+        (poster_id, group_id): text
+        for poster_id, group_id, text in PosterGroupWhyUseful.objects
+        .filter(poster_id__in=list(default_ids), group_id__in=set(default_ids.values()))
+        .values_list("poster_id", "group_id", "why_useful")
+    }
+    for p in posters:
+        group_text = texts.get((p.pk, default_ids.get(p.pk)), "")
+        p.why_useful_shown = group_text if group_text.strip() else (p.why_useful or "")
+    return posters
+
+
 @_groups_required
 def poster_detail(request, poster_id):
     poster      = get_accessible_poster_or_404(
@@ -1886,32 +1926,9 @@ def poster_detail(request, poster_id):
     poster_groups = [{"id": g.pk, "name": g.name} for g in assigned_user_groups]
     poster_group_ids = set(poster.groups.values_list("pk", flat=True))
 
-    default_why_group_id = None
-    if len(assigned_user_groups) == 1:
-        default_why_group_id = assigned_user_groups[0].pk
-    elif len(assigned_user_groups) > 1:
-        primary = UserGroupMembership.objects.filter(user=request.user, is_primary=True).first()
-        assigned_pks = {g.pk for g in assigned_user_groups}
-        if primary and primary.group_id in assigned_pks:
-            default_why_group_id = primary.group_id
-        else:
-            default_why_group_id = assigned_user_groups[0].pk
+    default_why_group_id = _default_why_group_ids(request.user, [poster.pk]).get(poster.pk)
 
-    user_memberships = (
-        UserGroupMembership.objects
-        .filter(user=request.user)
-        .select_related("group")
-        .order_by("-is_primary", "group__name")
-    )
-    user_groups_for_edit = [
-        {"id": m.group.pk, "name": m.group.name, "is_primary": m.is_primary,
-         "is_assigned": m.group.pk in poster_group_ids}
-        for m in user_memberships
-    ]
-    can_edit_groups = (
-        request.user.is_superuser
-        or any(g["is_assigned"] for g in user_groups_for_edit)
-    )
+    user_groups_for_edit, can_edit_groups = _poster_groups_editor(request.user, poster_group_ids)
 
     return render(request, "poster_detail.html", {
         "poster":         poster,
@@ -1935,10 +1952,48 @@ def edit_poster(request, poster_id):
         next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure(),
     ):
         next_url = ""
+    poster_group_ids = set(poster.groups.values_list("pk", flat=True))
+    user_groups_for_edit, can_edit_groups = _poster_groups_editor(request.user, poster_group_ids)
+    why_groups = _why_useful_editor(poster, [g for g in user_groups_for_edit if g["is_assigned"]])
+    groups_error = ""
     if request.method == "POST":
         form = PosterEditForm(request.POST, instance=poster)
-        if form.is_valid():
-            form.save()
+        if why_groups:
+            # Each of the caller's groups has its own text; the general copy is not edited here.
+            del form.fields["why_useful"]
+        why_updates = {}
+        for g in why_groups:
+            raw = request.POST.get(g["field"]) if g["has_interests"] else None
+            if raw is None:
+                continue
+            g["text"] = raw
+            new_text = raw.replace("\r\n", "\n").strip()
+            if new_text != g["original"].strip():
+                why_updates[g["id"]] = new_text
+        final_group_ids = None
+        if can_edit_groups and request.POST.get("groups_submitted"):
+            submitted = request.POST.getlist("group_ids")
+            for g in user_groups_for_edit:
+                g["is_assigned"] = str(g["id"]) in submitted
+            final_group_ids = _resolve_poster_group_ids(request.user, poster_group_ids, submitted)
+            if final_group_ids is None:
+                groups_error = "Select at least one group."
+        if form.is_valid() and not groups_error:
+            with transaction.atomic():
+                form.save()
+                if final_group_ids is not None and set(final_group_ids) != poster_group_ids:
+                    poster.groups.set(final_group_ids)
+                kept_group_ids = set(final_group_ids) if final_group_ids is not None else poster_group_ids
+                for group_id, text in why_updates.items():
+                    if group_id not in kept_group_ids:
+                        continue
+                    if text:
+                        PosterGroupWhyUseful.objects.update_or_create(
+                            poster=poster, group_id=group_id, defaults={"why_useful": text},
+                        )
+                    else:
+                        # An emptied box hands the text back to the AI on the next poster-page view.
+                        PosterGroupWhyUseful.objects.filter(poster=poster, group_id=group_id).delete()
             ActivityLog.objects.create(
                 user=request.user, poster=poster, action="updated",
                 poster_title=poster.title,
@@ -1948,7 +2003,71 @@ def edit_poster(request, poster_id):
             return redirect(next_url or "dashboard")
     else:
         form = PosterEditForm(instance=poster)
-    return render(request, "edit_poster.html", {"form": form, "poster": poster, "next_url": next_url})
+        if why_groups:
+            del form.fields["why_useful"]
+    return render(request, "edit_poster.html", {
+        "form": form, "poster": poster, "next_url": next_url,
+        "user_groups_for_edit": user_groups_for_edit,
+        "can_edit_groups": can_edit_groups,
+        "groups_error": groups_error,
+        "why_groups": why_groups,
+    })
+
+
+def _why_useful_editor(poster, assigned_groups):
+    """One «Why useful» box per caller's group on the paper (primary first), with its current text."""
+    group_ids = [g["id"] for g in assigned_groups]
+    texts = dict(
+        PosterGroupWhyUseful.objects
+        .filter(poster=poster, group_id__in=group_ids)
+        .values_list("group_id", "why_useful")
+    )
+    with_interests = {
+        group_id
+        for group_id, text in ResearchInterest.objects.filter(group_id__in=group_ids).values_list("group_id", "text")
+        if text and text.strip()
+    }
+    return [
+        {"id": g["id"], "name": g["name"], "is_primary": g["is_primary"],
+         "field": f"why_useful_{g['id']}", "has_interests": g["id"] in with_interests,
+         "original": texts.get(g["id"], ""), "text": texts.get(g["id"], "")}
+        for g in assigned_groups
+    ]
+
+
+def _poster_groups_editor(user, poster_group_ids):
+    """The caller's groups as editor chips, and whether they may change the paper's groups."""
+    memberships = (
+        UserGroupMembership.objects
+        .filter(user=user)
+        .select_related("group")
+        .order_by("-is_primary", "group__name")
+    )
+    chips = [
+        {"id": m.group.pk, "name": m.group.name, "is_primary": m.is_primary,
+         "is_assigned": m.group.pk in poster_group_ids}
+        for m in memberships
+    ]
+    return chips, user.is_superuser or any(g["is_assigned"] for g in chips)
+
+
+def _resolve_poster_group_ids(user, current_group_ids, raw_ids):
+    """Final group ids for a paper: requested ids limited to the caller's groups, plus any
+    groups the caller is not in (never detached). None when nothing would be left."""
+    user_group_ids = set(
+        UserGroupMembership.objects.filter(user=user).values_list("group_id", flat=True)
+    )
+    requested = set()
+    for gid in raw_ids:
+        try:
+            requested.add(int(gid))
+        except (ValueError, TypeError):
+            continue
+    allowed_new = requested & user_group_ids
+    preserved = set(current_group_ids) - user_group_ids
+    if not allowed_new and not preserved:
+        return None
+    return sorted(allowed_new | preserved)
 
 
 @_groups_required
@@ -2382,9 +2501,14 @@ def group_list(request):
         .order_by("-date_joined", "username")
     )
 
+    groups = list(page_obj.object_list)
+    delete_warnings = _group_delete_warnings([g.pk for g in groups])
+    for g in groups:
+        g.delete_warning = delete_warnings.get(g.pk, "")
+
     paginate_qs_base = f"q={search}" if search else ""
     return render(request, "groups/group_list.html", {
-        "groups": page_obj.object_list,
+        "groups": groups,
         "all_users": all_users,
         "pending_users": pending_users,
         "search_query": search,
@@ -2393,6 +2517,55 @@ def group_list(request):
         "paginate_label": "groups",
         "paginate_qs_base": paginate_qs_base,
     })
+
+
+def _group_delete_warnings(group_ids, max_names=3):
+    """Per group: what deleting it leaves behind (papers with no group, non-admin users with no group)."""
+    PosterGroups = ResearchGroup.posters.through
+    single_group_posters = (
+        PosterGroups.objects.values("researchposter_id")
+        .annotate(n=Count("id")).filter(n=1).values("researchposter_id")
+    )
+    orphan_papers = dict(
+        PosterGroups.objects
+        .filter(researchgroup_id__in=group_ids, researchposter_id__in=single_group_posters)
+        .values("researchgroup_id").annotate(n=Count("id"))
+        .values_list("researchgroup_id", "n")
+    )
+    stranded_users = {}
+    last_memberships = (
+        UserGroupMembership.objects
+        .filter(group_id__in=group_ids, user__is_superuser=False)
+        .annotate(n=Count("user__group_memberships")).filter(n=1)
+        .select_related("user")
+        .order_by("user__first_name", "user__last_name", "user__username")
+    )
+    for m in last_memberships:
+        stranded_users.setdefault(m.group_id, []).append(m.user.get_full_name().title() or m.user.username)
+
+    warnings = {}
+    for gid in group_ids:
+        lines = []
+        papers = orphan_papers.get(gid, 0)
+        if papers:
+            label = "paper" if papers == 1 else "papers"
+            lines.append(
+                f"⚠ {papers} {label} will be left without any group and will no longer be "
+                f"visible to anyone except admins."
+            )
+        names = stranded_users.get(gid, [])
+        if names:
+            shown = ", ".join(names[:max_names])
+            if len(names) > max_names:
+                shown += f" and {len(names) - max_names} others"
+            label = "This user" if len(names) == 1 else "These users"
+            lines.append(
+                f"⚠ {label} will be left without any group and will no longer be able to "
+                f"upload or see posters: {shown}."
+            )
+        if lines:
+            warnings[gid] = "\n\n".join(lines)
+    return warnings
 
 
 def _split_interests(blob):
@@ -2441,7 +2614,10 @@ def group_edit(request, group_id):
     return render(request, "groups/group_edit.html", {
         "group": group,
         "all_users": all_users,
-        "current_members": list(group.memberships.select_related("user").all()),
+        "current_members": list(
+            group.memberships.select_related("user")
+            .annotate(user_group_count=Count("user__group_memberships"))
+        ),
         "interests": list(group.interests.all()),
     })
 
@@ -2648,18 +2824,9 @@ def update_poster_groups(request, poster_id):
     if not isinstance(raw_ids, list):
         raw_ids = []
 
-    requested = set()
-    for gid in raw_ids:
-        try:
-            requested.add(int(gid))
-        except (ValueError, TypeError):
-            continue
-
-    allowed_new = requested & user_group_ids
-    preserved = current_group_ids - user_group_ids
-    if not allowed_new and not preserved:
+    final_ids = _resolve_poster_group_ids(request.user, current_group_ids, raw_ids)
+    if final_ids is None:
         return JsonResponse({"success": False, "message": "Select at least one group."}, status=400)
-    final_ids = sorted(allowed_new | preserved)
 
     poster.groups.set(final_ids)
 

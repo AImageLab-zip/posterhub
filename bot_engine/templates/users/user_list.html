@@ -5,6 +5,8 @@
 
 
 {% block content %}
+{% include '_toasts.html' %}
+
 <div class="container dashboard">
     <div class="users-container">
 
@@ -38,16 +40,6 @@
             {{ users|length }} result{{ users|length|pluralize }} for &ldquo;{{ search_query }}&rdquo;
             <a href="{% url 'user_admin_list' %}">Clear</a>
         </div>
-        {% endif %}
-
-        {% if messages %}
-        {% for message in messages %}
-        <div class="flash-alert {{ message.tags }}">
-            <span>{% if message.tags == 'success' %}&#10003;{% elif message.tags == 'error' %}&#10005;{% else %}&#8505;{% endif %}</span>
-            <span>{{ message }}</span>
-            <button type="button" class="flash-close" onclick="this.parentElement.remove()" aria-label="Close">&#10005;</button>
-        </div>
-        {% endfor %}
         {% endif %}
 
         <table class="user-table">
@@ -100,7 +92,7 @@
                         {% else %}
                             {% if u.is_group_manager_role %}
                             <form method="POST" action="{% url 'user_toggle_group_manager' u.pk %}" style="display:inline;"
-                                  data-confirm="Remove {{ u.get_full_name|default:u.username|escapejs }} from group managers?&#10;&#10;They will lose the ability to create / edit / delete research groups."
+                                  data-confirm="Remove {{ u.get_full_name|default:u.username }} from group managers?&#10;&#10;They will lose the ability to create / edit / delete research groups."
                                   data-confirm-title="Remove group manager"
                                   data-confirm-label="Remove">
                                 {% csrf_token %}
@@ -114,7 +106,7 @@
                             {% endif %}
                             {% if u.is_superuser %}
                             <form method="POST" action="{% url 'user_toggle_superuser' u.pk %}" style="display:inline;"
-                                  data-confirm="Remove admin rights from {{ u.get_full_name|default:u.username|escapejs }}?"
+                                  data-confirm="Remove admin rights from {{ u.get_full_name|default:u.username }}?"
                                   data-confirm-title="Demote admin"
                                   data-confirm-label="Demote">
                                 {% csrf_token %}
@@ -122,14 +114,14 @@
                             </form>
                             {% else %}
                             <form method="POST" action="{% url 'user_toggle_superuser' u.pk %}" style="display:inline;"
-                                  data-confirm="Promote {{ u.get_full_name|default:u.username|escapejs }} to ADMIN?&#10;&#10;Admins are Django superusers and can do everything, including managing users, groups and content. Only do this for someone you fully trust."
+                                  data-confirm="Promote {{ u.get_full_name|default:u.username }} to ADMIN?&#10;&#10;Admins are Django superusers and can do everything, including managing users, groups and content. Only do this for someone you fully trust."
                                   data-confirm-title="Promote to Admin"
                                   data-confirm-label="Promote">
                                 {% csrf_token %}
                                 <button type="submit" class="group-btn role-up" title="Grant full administrative rights">Make Admin</button>
                             </form>
                             <form method="POST" action="{% url 'user_delete' u.pk %}" style="display:inline;"
-                                  data-confirm="Delete {{ u.get_full_name|default:u.username|escapejs }}?&#10;&#10;This removes the account, group memberships, favorites and bot links. Uploaded papers are kept but lose attribution."
+                                  data-confirm="Delete {{ u.get_full_name|default:u.username }}?&#10;&#10;This removes the account, group memberships, favorites and bot links. Uploaded papers are kept but lose attribution."
                                   data-confirm-title="Delete user"
                                   data-confirm-label="Delete">
                                 {% csrf_token %}

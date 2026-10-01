@@ -9,6 +9,8 @@ from django.conf import settings
 from django.core.exceptions import SuspiciousFileOperation
 from django.core.files.base import ContentFile
 from django.db import models, transaction
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -481,6 +483,22 @@ class UserGroupMembership(models.Model):
                 user=self.user, is_primary=True,
             ).exclude(pk=self.pk).update(is_primary=False)
             super().save(*args, **kwargs)
+
+
+@receiver(post_delete, sender=UserGroupMembership)
+def _promote_oldest_membership_to_primary(sender, instance, **kwargs):
+    """When a primary membership is deleted, the user's oldest remaining membership becomes primary."""
+    if not instance.is_primary:
+        return
+    oldest = (
+        UserGroupMembership.objects
+        .filter(user_id=instance.user_id)
+        .order_by("joined_at", "pk")
+        .values_list("pk", flat=True)
+        .first()
+    )
+    if oldest:
+        UserGroupMembership.objects.filter(pk=oldest).update(is_primary=True)
 
 
 class PosterGroupWhyUseful(models.Model):

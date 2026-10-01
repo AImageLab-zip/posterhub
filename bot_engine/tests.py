@@ -1,5 +1,6 @@
 import json
 from unittest.mock import patch
+from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -8,7 +9,7 @@ from django.urls import reverse
 
 from .access import GROUP_MANAGER_ROLE
 from .models import (
-    ActivityLog, PendingAssignmentDismissal, ResearchGroup, ResearchInterest,
+    ActivityLog, PendingAssignmentDismissal, PosterGroupWhyUseful, ResearchGroup, ResearchInterest,
     ResearchPoster, UserGroupMembership,
 )
 
@@ -154,6 +155,31 @@ class GroupManagementAccessTests(TestCase):
                 self.assertContains(response, f'action="{reverse("interest_add", args=[self.group.pk])}"')
                 self.assertContains(response, f'action="{reverse("interest_edit", args=[self.interest.pk])}"')
 
+    def test_group_creation_is_confirmed_with_a_toast(self):
+        self.sign_in("super_member")
+        response = self.client.post(reverse("group_create"), {"name": "Toast group"}, follow=True)
+        self.assertContains(response, 'class="toast toast-success')
+        self.assertContains(response, "Group &quot;Toast group&quot; created.")
+        self.assertNotContains(response, 'class="flash-alert')
+
+    def test_group_edit_confirmations_are_shown_as_toasts(self):
+        self.sign_in("super_member")
+        response = self.client.post(
+            reverse("group_edit", args=[self.group.pk]), {"name": "Renamed for toast"}, follow=True,
+        )
+        self.assertContains(response, 'class="toast toast-success')
+        self.assertContains(response, "Group &quot;Renamed for toast&quot; updated.")
+        self.assertNotContains(response, 'class="flash-alert')
+
+    def test_user_management_confirmations_are_shown_as_toasts(self):
+        self.sign_in("super_member")
+        response = self.client.post(
+            reverse("user_toggle_group_manager", args=[self.users["member"].pk]), follow=True,
+        )
+        self.assertContains(response, 'class="toast toast-success')
+        self.assertContains(response, "added to group managers.")
+        self.assertNotContains(response, 'class="flash-alert')
+
     def test_authorized_users_can_create_edit_and_delete_groups_and_interests(self):
         for role in self.superusers + self.managers:
             with self.subTest(role=role):
@@ -203,6 +229,38 @@ class GroupManagementAccessTests(TestCase):
                 response = self.client.post(reverse("group_remove_member", args=[self.group.pk, target.pk]))
                 self.assertRedirects(response, reverse("group_edit", args=[self.group.pk]), fetch_redirect_response=False)
                 self.assertFalse(UserGroupMembership.objects.filter(user=target, group=self.group).exists())
+
+    def test_removal_dialog_warns_only_when_it_is_the_users_last_group(self):
+        warning = "This is the user's last group"
+        edit_url = reverse("group_edit", args=[self.group.pk])
+        self.sign_in("super_no_membership")
+
+        def warned(user):
+            response = self.client.get(edit_url)
+            action = reverse("group_remove_member", args=[self.group.pk, user.pk])
+            form = response.content.decode().split(f'action="{action}"', 1)[1].split(">", 1)[0]
+            return warning in form
+
+        self.assertTrue(warned(self.users["member"]))
+        self.assertTrue(warned(self.users["manager_member"]))
+        self.assertFalse(warned(self.users["super_member"]))
+
+        other = ResearchGroup.objects.create(name="Second research group")
+        UserGroupMembership.objects.create(user=self.users["member"], group=other)
+        self.assertFalse(warned(self.users["member"]))
+
+    def test_apostrophes_in_data_attributes_are_html_escaped_not_js_escaped(self):
+        member = self.users["member"]
+        member.first_name, member.last_name = "Anna", "D'Angelo"
+        member.save()
+        self.sign_in("super_no_membership")
+        response = self.client.get(reverse("group_edit", args=[self.group.pk]))
+        self.assertContains(response, 'data-confirm="Remove Anna D&#x27;Angelo from the group')
+        self.assertNotContains(response, "\\u0027")
+
+        self.sign_in("member")
+        response = self.client.get(reverse("dashboard"), {"search": "Alzheimer's"})
+        self.assertContains(response, 'data-search-query="Alzheimer&#x27;s"')
 
     def test_ordinary_users_cannot_open_management_pages_directly(self):
         for role in self.ordinary_users:
@@ -520,6 +578,52 @@ class PosterGroupScopeTests(TestCase):
         self.assertEqual(set(self.foreign.groups.values_list("pk", flat=True)), {self.other_team.pk})
         self.assertEqual([g["id"] for g in response.json()["user_groups"]], [])
 
+    def edit_with_groups(self, poster, group_ids):
+        return self.client.post(
+            reverse("edit_poster", args=[poster.pk]),
+            {"title": poster.title, "authors": "An Author", "summary": "A summary.",
+             "category": "other", "validation_status": "approved",
+             "groups_submitted": "1", "group_ids": group_ids},
+        )
+
+    def test_the_edit_form_reassigns_groups_within_the_callers_own(self):
+        UserGroupMembership.objects.create(user=self.teammate, group=self.other_team)
+        self.sign_in(self.teammate)
+        self.assertContains(
+            self.client.get(reverse("edit_poster", args=[self.shared.pk])), 'name="group_ids"',
+        )
+        response = self.edit_with_groups(self.shared, [self.other_team.pk])
+        self.assertRedirects(response, reverse("dashboard"), fetch_redirect_response=False)
+        self.assertEqual(set(self.shared.groups.values_list("pk", flat=True)), {self.other_team.pk})
+
+    def test_editing_from_the_poster_page_returns_there_with_a_toast(self):
+        self.sign_in(self.teammate)
+        detail_url = reverse("poster_detail", args=[self.shared.pk])
+        edit_url = reverse("edit_poster", args=[self.shared.pk])
+        self.assertContains(self.client.get(detail_url), f'href="{edit_url}?next={quote(detail_url, safe="")}"')
+        response = self.client.post(
+            edit_url,
+            {"title": "Edited from detail", "authors": "An Author", "summary": "A summary.",
+             "category": "other", "validation_status": "approved", "next": detail_url},
+            follow=True,
+        )
+        self.assertRedirects(response, detail_url)
+        self.assertContains(response, 'class="toast toast-success')
+        self.assertContains(response, "Paper updated successfully!")
+
+    def test_the_edit_form_refuses_to_leave_a_paper_without_groups(self):
+        self.sign_in(self.teammate)
+        response = self.edit_with_groups(self.shared, [])
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Select at least one group.")
+        self.assertEqual(set(self.shared.groups.values_list("pk", flat=True)), {self.team.pk})
+
+    def test_the_edit_form_keeps_groups_the_caller_is_not_in(self):
+        self.foreign.groups.add(self.team)
+        self.sign_in(self.teammate)
+        self.edit_with_groups(self.foreign, [self.other_team.pk])
+        self.assertEqual(set(self.foreign.groups.values_list("pk", flat=True)), {self.other_team.pk})
+
     def test_clearing_the_activity_log_is_reserved_to_managers(self):
         ActivityLog.objects.create(action="created", poster_title="Shared team paper")
         for user in (self.owner, self.teammate, self.outsider):
@@ -536,6 +640,229 @@ class PosterGroupScopeTests(TestCase):
             reverse("dashboard"), fetch_redirect_response=False,
         )
         self.assertFalse(ActivityLog.objects.exists())
+
+
+@override_settings(
+    SHIBBOLETH_AUTH=False,
+    SECURE_SSL_REDIRECT=False,
+    ALLOWED_HOSTS=["testserver"],
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class WhyUsefulPerGroupTests(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.member = User.objects.create_user(username="why_member")
+        cls.admin = User.objects.create_user(username="why_admin", is_superuser=True)
+        cls.vision = ResearchGroup.objects.create(name="Vision")
+        cls.robotics = ResearchGroup.objects.create(name="Robotics")
+        cls.bare = ResearchGroup.objects.create(name="Without interests")
+        ResearchInterest.objects.create(group=cls.vision, text="Segmentation")
+        ResearchInterest.objects.create(group=cls.robotics, text="Grasping")
+        UserGroupMembership.objects.create(user=cls.member, group=cls.vision, is_primary=True)
+        UserGroupMembership.objects.create(user=cls.member, group=cls.robotics)
+        UserGroupMembership.objects.create(user=cls.member, group=cls.bare)
+        cls.poster = ResearchPoster.objects.create(
+            title="Per-group paper", authors="An Author", summary="A summary.",
+            validation_status="approved", why_useful="General copy",
+        )
+        cls.poster.groups.add(cls.vision, cls.robotics, cls.bare)
+        PosterGroupWhyUseful.objects.create(poster=cls.poster, group=cls.vision, why_useful="Vision text")
+        PosterGroupWhyUseful.objects.create(poster=cls.poster, group=cls.robotics, why_useful="Robotics text")
+
+    def sign_in(self, user):
+        self.client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
+
+    def edit(self, **why):
+        return self.client.post(reverse("edit_poster", args=[self.poster.pk]), {
+            "title": self.poster.title, "authors": "An Author", "summary": "A summary.",
+            "category": "other", "validation_status": "approved", **why,
+        })
+
+    def group_text(self, group):
+        entry = PosterGroupWhyUseful.objects.filter(poster=self.poster, group=group).first()
+        return entry.why_useful if entry else None
+
+    def test_the_edit_page_has_one_box_per_group_and_no_general_field(self):
+        self.sign_in(self.member)
+        response = self.client.get(reverse("edit_poster", args=[self.poster.pk]))
+        self.assertContains(response, f'name="why_useful_{self.vision.pk}"')
+        self.assertContains(response, f'name="why_useful_{self.robotics.pk}"')
+        self.assertContains(response, "Vision text")
+        self.assertContains(response, "Robotics text")
+        self.assertNotContains(response, 'name="why_useful"')
+        self.assertNotContains(response, f'name="why_useful_{self.bare.pk}"')
+        self.assertContains(response, "This group has no research interests")
+
+    def test_saving_updates_only_that_groups_text_and_the_poster_page_shows_it(self):
+        self.sign_in(self.member)
+        self.edit(**{f"why_useful_{self.vision.pk}": "Edited vision text\r\n",
+                     f"why_useful_{self.robotics.pk}": "Robotics text"})
+        self.assertEqual(self.group_text(self.vision), "Edited vision text")
+        self.assertEqual(self.group_text(self.robotics), "Robotics text")
+        self.poster.refresh_from_db()
+        self.assertEqual(self.poster.why_useful, "General copy")
+        with patch("bot_engine.views.generate_why_useful") as generate:
+            response = self.client.get(
+                reverse("poster_why_useful_for_group", args=[self.poster.pk]), {"group_id": self.vision.pk},
+            )
+        generate.assert_not_called()
+        self.assertEqual(response.json()["why_useful"], "Edited vision text")
+
+    def test_an_unchanged_box_is_not_rewritten(self):
+        self.sign_in(self.member)
+        before = PosterGroupWhyUseful.objects.get(poster=self.poster, group=self.robotics).updated_at
+        self.edit(**{f"why_useful_{self.robotics.pk}": "Robotics text\r\n"})
+        after = PosterGroupWhyUseful.objects.get(poster=self.poster, group=self.robotics).updated_at
+        self.assertEqual(before, after)
+
+    def test_emptying_a_box_lets_the_ai_write_a_new_text(self):
+        self.sign_in(self.member)
+        self.edit(**{f"why_useful_{self.vision.pk}": "   "})
+        self.assertIsNone(self.group_text(self.vision))
+        with patch("bot_engine.views.generate_why_useful", return_value="Fresh AI text"):
+            response = self.client.get(
+                reverse("poster_why_useful_for_group", args=[self.poster.pk]), {"group_id": self.vision.pk},
+            )
+        self.assertEqual(response.json()["why_useful"], "Fresh AI text")
+
+    def test_a_group_removed_in_the_same_save_keeps_its_old_text(self):
+        self.sign_in(self.member)
+        self.edit(**{
+            "groups_submitted": "1", "group_ids": [self.vision.pk, self.bare.pk],
+            f"why_useful_{self.robotics.pk}": "Should not be saved",
+        })
+        self.assertEqual(set(self.poster.groups.values_list("pk", flat=True)), {self.vision.pk, self.bare.pk})
+        self.assertEqual(self.group_text(self.robotics), "Robotics text")
+
+    def test_the_dashboard_shows_the_users_default_group_text(self):
+        self.sign_in(self.member)
+        response = self.client.get(reverse("dashboard"))
+        self.assertContains(response, "Vision text")
+        self.assertNotContains(response, "General copy")
+        PosterGroupWhyUseful.objects.filter(poster=self.poster, group=self.vision).delete()
+        self.assertContains(self.client.get(reverse("dashboard")), "General copy")
+
+    def test_the_default_group_is_the_primary_else_the_first_by_name(self):
+        from .views import _attach_why_useful_shown
+        self.assertEqual(_attach_why_useful_shown(self.member, [self.poster])[0].why_useful_shown, "Vision text")
+        self.poster.groups.remove(self.vision)
+        poster = ResearchPoster.objects.get(pk=self.poster.pk)
+        self.assertEqual(_attach_why_useful_shown(self.member, [poster])[0].why_useful_shown, "Robotics text")
+        self.assertEqual(_attach_why_useful_shown(self.admin, [poster])[0].why_useful_shown, "General copy")
+
+    def test_a_user_outside_the_papers_groups_still_edits_the_general_copy(self):
+        self.sign_in(self.admin)
+        response = self.client.get(reverse("edit_poster", args=[self.poster.pk]))
+        self.assertContains(response, 'name="why_useful"')
+        self.client.post(reverse("edit_poster", args=[self.poster.pk]), {
+            "title": self.poster.title, "authors": "An Author", "summary": "A summary.",
+            "category": "other", "validation_status": "approved", "why_useful": "Admin general copy",
+        })
+        self.poster.refresh_from_db()
+        self.assertEqual(self.poster.why_useful, "Admin general copy")
+
+
+@override_settings(
+    SHIBBOLETH_AUTH=False,
+    SECURE_SSL_REDIRECT=False,
+    ALLOWED_HOSTS=["testserver"],
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class GroupDeleteWarningTests(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.doomed = ResearchGroup.objects.create(name="Doomed")
+        cls.other = ResearchGroup.objects.create(name="Other")
+        cls.admin = User.objects.create_user(username="admin", is_superuser=True)
+        UserGroupMembership.objects.create(user=cls.admin, group=cls.doomed, is_primary=True)
+        for first, last in (("Anna", "Bianchi"), ("Bruno", "Rossi"), ("Carla", "Verdi"), ("Dario", "Neri"), ("Elena", "Gallo")):
+            user = User.objects.create_user(username=first.lower(), first_name=first, last_name=last)
+            UserGroupMembership.objects.create(user=user, group=cls.doomed, is_primary=True)
+        cls.in_both = User.objects.create_user(username="both", first_name="Zeno", last_name="Both")
+        UserGroupMembership.objects.create(user=cls.in_both, group=cls.doomed, is_primary=True)
+        UserGroupMembership.objects.create(user=cls.in_both, group=cls.other)
+
+        only_doomed = [ResearchPoster.objects.create(title=f"Only doomed {i}") for i in range(2)]
+        shared = ResearchPoster.objects.create(title="Shared")
+        for poster in only_doomed:
+            poster.groups.add(cls.doomed)
+        shared.groups.add(cls.doomed, cls.other)
+
+    def warnings(self):
+        from .views import _group_delete_warnings
+        return _group_delete_warnings([self.doomed.pk, self.other.pk])
+
+    def test_warning_counts_orphaned_papers_and_lists_stranded_users(self):
+        warning = self.warnings()[self.doomed.pk]
+        self.assertIn("2 papers will be left without any group", warning)
+        self.assertIn("These users will be left without any group", warning)
+        self.assertIn(": Anna Bianchi, Bruno Rossi, Carla Verdi and 2 others.", warning)
+        self.assertNotIn("Zeno", warning)
+
+    def test_group_whose_deletion_strands_nothing_has_no_warning(self):
+        self.assertNotIn(self.other.pk, self.warnings())
+
+    def test_singular_wording_and_no_overflow_suffix(self):
+        UserGroupMembership.objects.filter(group=self.doomed, user__username__in=["anna", "bruno", "carla", "dario"]).delete()
+        ResearchPoster.objects.filter(title="Only doomed 1").delete()
+        warning = self.warnings()[self.doomed.pk]
+        self.assertIn("1 paper will be left", warning)
+        self.assertIn("This user will be left without any group and will no longer be able to upload or see posters: Elena Gallo.", warning)
+        self.assertNotIn("others", warning)
+
+    def test_group_list_puts_the_warning_in_the_delete_dialog(self):
+        self.client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
+        response = self.client.get(reverse("group_list"))
+        self.assertContains(response, 'data-confirm-warning="⚠ 2 papers will be left without any group')
+
+
+class PrimaryGroupPromotionTests(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        cls.user = get_user_model().objects.create_user(username="promoted")
+        cls.primary, cls.oldest, cls.newest = (
+            ResearchGroup.objects.create(name=name) for name in ("Primary", "Oldest", "Newest")
+        )
+        now = timezone.now()
+        for group, age_days, is_primary in ((cls.primary, 1, True), (cls.oldest, 10, False), (cls.newest, 0, False)):
+            membership = UserGroupMembership.objects.create(user=cls.user, group=group, is_primary=is_primary)
+            UserGroupMembership.objects.filter(pk=membership.pk).update(joined_at=now - timedelta(days=age_days))
+
+    def primary_group(self):
+        return UserGroupMembership.objects.get(user=self.user, is_primary=True).group
+
+    def test_removing_the_primary_promotes_the_oldest_remaining_group(self):
+        UserGroupMembership.objects.get(user=self.user, group=self.primary).delete()
+        self.assertEqual(self.primary_group(), self.oldest)
+
+    def test_deleting_the_primary_group_promotes_the_oldest_remaining_group(self):
+        self.primary.delete()
+        self.assertEqual(self.primary_group(), self.oldest)
+
+    def test_removing_a_secondary_group_keeps_the_primary(self):
+        UserGroupMembership.objects.get(user=self.user, group=self.oldest).delete()
+        self.assertEqual(self.primary_group(), self.primary)
+
+    def test_removing_the_last_group_leaves_no_membership(self):
+        UserGroupMembership.objects.filter(user=self.user).exclude(group=self.primary).delete()
+        UserGroupMembership.objects.get(user=self.user, group=self.primary).delete()
+        self.assertFalse(UserGroupMembership.objects.filter(user=self.user).exists())
 
 
 class ThumbnailOrientationTests(TestCase):

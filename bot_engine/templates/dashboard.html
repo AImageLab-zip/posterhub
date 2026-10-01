@@ -4,18 +4,7 @@
 {% block title %}Dashboard — PosterHub{% endblock %}
 
 {% block content %}
-    {% if messages %}
-        {% for message in messages %}
-        <div class="toast toast-{{ message.tags }} max-xl:tw-top-auto max-xl:tw-right-2.5 max-xl:tw-left-2.5 max-xl:tw-bottom-[calc(12px+env(safe-area-inset-bottom,0px))] max-xl:tw-max-w-[calc(100vw-20px)] max-xl:tw-p-[14px_16px]" id="toast">
-            <span class="toast-icon">{% if message.tags == 'success' %}✓{% elif message.tags == 'error' %}✕{% elif message.tags == 'warning' %}⚠{% else %}ℹ{% endif %}</span>
-            <div class="toast-body">
-                <span class="toast-title">{% if message.tags == 'success' %}Success{% elif message.tags == 'error' %}Error{% elif message.tags == 'warning' %}Warning{% else %}Info{% endif %}</span>
-                <span class="toast-detail">{{ message }}</span>
-            </div>
-            <button class="toast-close" onclick="this.parentElement.classList.add('toast-hide');setTimeout(()=>this.parentElement.remove(),300)" aria-label="Close">✕</button>
-        </div>
-        {% endfor %}
-    {% endif %}
+    {% include '_toasts.html' %}
 
     <div class="container dashboard max-xl:tw-overflow-x-hidden max-xl:tw-max-w-[100vw]">
         <div class="dashboard-header max-xl:!tw-flex-col max-xl:!tw-items-stretch max-xl:!tw-gap-2 max-xl:!tw-px-3.5 max-xl:!tw-py-2.5 max-xl:!tw-rounded-[10px] max-xl:!tw-mb-2.5">
@@ -362,24 +351,24 @@
         </svg>
     </button>
     <div id="dashboardData" style="display:none"
-         data-status-filter="{{ status_filter|escapejs }}"
-         data-category-filter="{{ category_filter|escapejs }}"
-         data-has-github-filter="{{ has_github_filter|escapejs }}"
-         data-has-paper-filter="{{ has_paper_filter|escapejs }}"
-         data-favorites-filter="{{ favorites_filter|escapejs }}"
-         data-mine-filter="{{ mine_filter|escapejs }}"
-         data-search-query="{{ search_query|escapejs }}"
-         data-conference-filter="{{ conference_filter|escapejs }}"
-         data-author-filter="{{ author_filter|escapejs }}"
-         data-summary-filter="{{ summary_filter|escapejs }}"
-         data-date-from-filter="{{ date_from_filter|escapejs }}"
-         data-date-to-filter="{{ date_to_filter|escapejs }}"
-         data-year-from-filter="{{ year_from_filter|escapejs }}"
-         data-year-to-filter="{{ year_to_filter|escapejs }}"
-         data-group-filter="{{ group_filter|escapejs }}"
+         data-status-filter="{{ status_filter }}"
+         data-category-filter="{{ category_filter }}"
+         data-has-github-filter="{{ has_github_filter }}"
+         data-has-paper-filter="{{ has_paper_filter }}"
+         data-favorites-filter="{{ favorites_filter }}"
+         data-mine-filter="{{ mine_filter }}"
+         data-search-query="{{ search_query }}"
+         data-conference-filter="{{ conference_filter }}"
+         data-author-filter="{{ author_filter }}"
+         data-summary-filter="{{ summary_filter }}"
+         data-date-from-filter="{{ date_from_filter }}"
+         data-date-to-filter="{{ date_to_filter }}"
+         data-year-from-filter="{{ year_from_filter }}"
+         data-year-to-filter="{{ year_to_filter }}"
+         data-group-filter="{{ group_filter }}"
          data-subfield-filter="{{ subfield_filter|join:',' }}"
-         data-sort-by="{{ sort_by|escapejs }}"
-         data-sort-order="{{ sort_order|escapejs }}"
+         data-sort-by="{{ sort_by }}"
+         data-sort-order="{{ sort_order }}"
          data-per-page="{{ per_page }}"
          data-current-page="{{ page_obj.number }}">
     </div>
