@@ -230,6 +230,39 @@ class GroupManagementAccessTests(TestCase):
                 self.assertRedirects(response, reverse("group_edit", args=[self.group.pk]), fetch_redirect_response=False)
                 self.assertFalse(UserGroupMembership.objects.filter(user=target, group=self.group).exists())
 
+    def test_add_member_from_pending_list_returns_to_group_list(self):
+        target = self.users["no_membership"]
+        self.sign_in("super_no_membership")
+        next_url = reverse("group_list") + "?q=lab"
+        response = self.client.post(reverse("group_add_member", args=[self.group.pk]), {
+            "user_ids": [target.pk], "next": next_url,
+        })
+        self.assertRedirects(response, next_url, fetch_redirect_response=False)
+        self.assertTrue(UserGroupMembership.objects.filter(user=target, group=self.group).exists())
+
+        response = self.client.post(reverse("group_add_member", args=[self.group.pk]), {
+            "user_ids": [target.pk], "next": "https://evil.example.com/",
+        })
+        self.assertRedirects(response, reverse("group_edit", args=[self.group.pk]), fetch_redirect_response=False)
+
+    def test_add_member_ajax_returns_json_without_redirect(self):
+        target = self.users["no_membership"]
+        self.sign_in("super_no_membership")
+        url = reverse("group_add_member", args=[self.group.pk])
+        response = self.client.post(url, {"user_ids": [target.pk]}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual([m["user_id"] for m in data["added"]], [target.pk])
+        self.assertTrue(data["added"][0]["is_primary"])
+        self.assertEqual(data["messages"][0]["type"], "success")
+
+        response = self.client.post(url, {"user_ids": [target.pk]}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.json()["already"], [target.pk])
+
+        response = self.client.post(url, {}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 400)
+
     def test_removal_dialog_warns_only_when_it_is_the_users_last_group(self):
         warning = "This is the user's last group"
         edit_url = reverse("group_edit", args=[self.group.pk])
