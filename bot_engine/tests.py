@@ -1,5 +1,6 @@
 import json
 from unittest.mock import patch
+from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -153,6 +154,31 @@ class GroupManagementAccessTests(TestCase):
                 response = self.client.get(reverse("group_edit", args=[self.group.pk]))
                 self.assertContains(response, f'action="{reverse("interest_add", args=[self.group.pk])}"')
                 self.assertContains(response, f'action="{reverse("interest_edit", args=[self.interest.pk])}"')
+
+    def test_group_creation_is_confirmed_with_a_toast(self):
+        self.sign_in("super_member")
+        response = self.client.post(reverse("group_create"), {"name": "Toast group"}, follow=True)
+        self.assertContains(response, 'class="toast toast-success')
+        self.assertContains(response, "Group &quot;Toast group&quot; created.")
+        self.assertNotContains(response, 'class="flash-alert')
+
+    def test_group_edit_confirmations_are_shown_as_toasts(self):
+        self.sign_in("super_member")
+        response = self.client.post(
+            reverse("group_edit", args=[self.group.pk]), {"name": "Renamed for toast"}, follow=True,
+        )
+        self.assertContains(response, 'class="toast toast-success')
+        self.assertContains(response, "Group &quot;Renamed for toast&quot; updated.")
+        self.assertNotContains(response, 'class="flash-alert')
+
+    def test_user_management_confirmations_are_shown_as_toasts(self):
+        self.sign_in("super_member")
+        response = self.client.post(
+            reverse("user_toggle_group_manager", args=[self.users["member"].pk]), follow=True,
+        )
+        self.assertContains(response, 'class="toast toast-success')
+        self.assertContains(response, "added to group managers.")
+        self.assertNotContains(response, 'class="flash-alert')
 
     def test_authorized_users_can_create_edit_and_delete_groups_and_interests(self):
         for role in self.superusers + self.managers:
@@ -569,6 +595,21 @@ class PosterGroupScopeTests(TestCase):
         response = self.edit_with_groups(self.shared, [self.other_team.pk])
         self.assertRedirects(response, reverse("dashboard"), fetch_redirect_response=False)
         self.assertEqual(set(self.shared.groups.values_list("pk", flat=True)), {self.other_team.pk})
+
+    def test_editing_from_the_poster_page_returns_there_with_a_toast(self):
+        self.sign_in(self.teammate)
+        detail_url = reverse("poster_detail", args=[self.shared.pk])
+        edit_url = reverse("edit_poster", args=[self.shared.pk])
+        self.assertContains(self.client.get(detail_url), f'href="{edit_url}?next={quote(detail_url, safe="")}"')
+        response = self.client.post(
+            edit_url,
+            {"title": "Edited from detail", "authors": "An Author", "summary": "A summary.",
+             "category": "other", "validation_status": "approved", "next": detail_url},
+            follow=True,
+        )
+        self.assertRedirects(response, detail_url)
+        self.assertContains(response, 'class="toast toast-success')
+        self.assertContains(response, "Paper updated successfully!")
 
     def test_the_edit_form_refuses_to_leave_a_paper_without_groups(self):
         self.sign_in(self.teammate)

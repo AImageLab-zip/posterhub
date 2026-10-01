@@ -4,18 +4,7 @@
 {% block title %}Dashboard — PosterHub{% endblock %}
 
 {% block content %}
-    {% if messages %}
-        {% for message in messages %}
-        <div class="toast toast-{{ message.tags }} max-xl:tw-top-auto max-xl:tw-right-2.5 max-xl:tw-left-2.5 max-xl:tw-bottom-[calc(12px+env(safe-area-inset-bottom,0px))] max-xl:tw-max-w-[calc(100vw-20px)] max-xl:tw-p-[14px_16px]" id="toast">
-            <span class="toast-icon">{% if message.tags == 'success' %}✓{% elif message.tags == 'error' %}✕{% elif message.tags == 'warning' %}⚠{% else %}ℹ{% endif %}</span>
-            <div class="toast-body">
-                <span class="toast-title">{% if message.tags == 'success' %}Success{% elif message.tags == 'error' %}Error{% elif message.tags == 'warning' %}Warning{% else %}Info{% endif %}</span>
-                <span class="toast-detail">{{ message }}</span>
-            </div>
-            <button class="toast-close" onclick="this.parentElement.classList.add('toast-hide');setTimeout(()=>this.parentElement.remove(),300)" aria-label="Close">✕</button>
-        </div>
-        {% endfor %}
-    {% endif %}
+    {% include '_toasts.html' %}
 
     <div class="container dashboard max-xl:tw-overflow-x-hidden max-xl:tw-max-w-[100vw]">
         <div class="dashboard-header max-xl:!tw-flex-col max-xl:!tw-items-stretch max-xl:!tw-gap-2 max-xl:!tw-px-3.5 max-xl:!tw-py-2.5 max-xl:!tw-rounded-[10px] max-xl:!tw-mb-2.5">

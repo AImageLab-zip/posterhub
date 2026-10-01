@@ -5,6 +5,8 @@
 
 
 {% block content %}
+{% include '_toasts.html' %}
+
 <div class="container dashboard">
     <div class="users-container">
 
@@ -38,16 +40,6 @@
             {{ users|length }} result{{ users|length|pluralize }} for &ldquo;{{ search_query }}&rdquo;
             <a href="{% url 'user_admin_list' %}">Clear</a>
         </div>
-        {% endif %}
-
-        {% if messages %}
-        {% for message in messages %}
-        <div class="flash-alert {{ message.tags }}">
-            <span>{% if message.tags == 'success' %}&#10003;{% elif message.tags == 'error' %}&#10005;{% else %}&#8505;{% endif %}</span>
-            <span>{{ message }}</span>
-            <button type="button" class="flash-close" onclick="this.parentElement.remove()" aria-label="Close">&#10005;</button>
-        </div>
-        {% endfor %}
         {% endif %}
 
         <table class="user-table">

@@ -136,8 +136,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function showToast(message, type) {
     type = type || 'success';
 
-    var existing = document.getElementById('toast');
-    if (existing) existing.remove();
+    document.querySelectorAll('.toast').forEach(function (t) { t.remove(); });
 
     var icons = { success: '\u2713', error: '\u2715', info: '\u2139', warning: '\u26A0' };
 
@@ -155,9 +154,31 @@ function showToast(message, type) {
 
     document.body.appendChild(toast);
 
-    var delay = type === 'warning' ? 5000 : 3000;
+    scheduleToastHide(toast);
+}
+
+function scheduleToastHide(toast) {
+    var sticky = toast.classList.contains('toast-warning') || toast.classList.contains('toast-error');
     setTimeout(function () {
         toast.classList.add('toast-hide');
         setTimeout(function () { toast.remove(); }, 300);
-    }, delay);
+    }, sticky ? 5000 : 3000);
 }
+
+// Server messages (templates/_toasts.html): stack them if there are several, then auto-hide.
+// Below the xl breakpoint toasts sit at the bottom of the screen, so they stack upwards.
+document.addEventListener('DOMContentLoaded', function () {
+    var bottomAnchored = window.matchMedia('(max-width: 1279.98px)').matches;
+    var offset = 0;
+    document.querySelectorAll('.toast').forEach(function (toast) {
+        if (offset) {
+            if (bottomAnchored) {
+                toast.style.bottom = 'calc(12px + env(safe-area-inset-bottom, 0px) + ' + offset + 'px)';
+            } else {
+                toast.style.top = (30 + offset) + 'px';
+            }
+        }
+        offset += toast.offsetHeight + 10;
+        scheduleToastHide(toast);
+    });
+});
