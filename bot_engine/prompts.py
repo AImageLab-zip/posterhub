@@ -13,7 +13,7 @@ Return ONLY valid JSON (no markdown) with these fields:
     "arxiv_id": "arXiv identifier or arxiv.org paper URL only if explicitly visible",
     "institution": "University/institution if visible",
     "search_query": "Search query to find paper online (title + first author)",
-    "github_query": "Short project name or method acronym for GitHub search"
+    "github_url": "GitHub repository URL exactly as printed on the image, or empty string if none is printed (never guess)"
 }
 
 For "subfields", choose ONE to FOUR slugs from this list that best describe the

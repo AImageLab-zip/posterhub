@@ -576,3 +576,57 @@ class BotAccount(models.Model):
 
     def __str__(self):
         return f"{self.platform}:{self.recipient} -> {self.user}"
+
+
+class ProceedingsSource(models.Model):
+    PARSER_CHOICES = [
+        ("miccai_json", "MICCAI open-access JSON"),
+        ("virtual_site_json", "Conference virtual-site JSON"),
+        ("cvf_html", "CVF / ECVA open-access HTML"),
+        ("html_selectors", "Generic HTML (CSS selectors)"),
+        ("html_links", "Generic HTML (title-like links)"),
+    ]
+    STATUS_CHOICES = [
+        ("never", "Never synced"),
+        ("ok", "OK"),
+        ("empty", "No papers found"),
+        ("error", "Error"),
+    ]
+
+    conference = models.CharField(max_length=50, help_text="Short label, e.g. MICCAI, CVPR, NeurIPS.")
+    year = models.PositiveSmallIntegerField()
+    url = models.URLField(max_length=500)
+    parser = models.CharField(max_length=30, choices=PARSER_CHOICES)
+    options = models.JSONField(
+        default=dict, blank=True,
+        help_text='Parser options as JSON, e.g. {"href_contains": "eccv_2024"}. See the guide below the list.',
+    )
+    enabled = models.BooleanField(default=True)
+    last_synced_at = models.DateTimeField(blank=True, null=True)
+    last_status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="never")
+    last_message = models.CharField(max_length=500, blank=True, default="")
+    paper_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["conference", "-year"]
+        constraints = [
+            models.UniqueConstraint(fields=["conference", "year", "url"], name="unique_proceedings_source"),
+        ]
+
+    def __str__(self):
+        return f"{self.conference} {self.year}"
+
+
+class ProceedingsPaper(models.Model):
+    source = models.ForeignKey(ProceedingsSource, on_delete=models.CASCADE, related_name="papers")
+    title = models.CharField(max_length=500)
+    normalized_title = models.CharField(max_length=500)
+    authors = models.TextField(blank=True, default="")
+    url = models.URLField(max_length=500)
+    pdf_url = models.URLField(max_length=500, blank=True, default="")
+
+    class Meta:
+        ordering = ["title"]
+
+    def __str__(self):
+        return self.title

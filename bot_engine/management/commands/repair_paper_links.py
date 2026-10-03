@@ -28,7 +28,7 @@ class Command(BaseCommand):
             if poster.analysis_status == "processing":
                 self.stdout.write(f"{pk}: analysis is running; skipped")
                 continue
-            paper = search_paper(poster.title)
+            paper = search_paper(poster.title, authors=poster.authors, conference=poster.conference)
             if not paper and poster.github_link:
                 paper = find_paper_from_github(poster.github_link, poster.title)
             if not paper:
@@ -48,6 +48,9 @@ class Command(BaseCommand):
                 current.ai_paper_link = url
                 current.updated_at = timezone.now()
                 fields = ["paper_link", "ai_paper_link", "updated_at"]
+                if not current.conference and paper.get("conference"):
+                    current.conference = paper["conference"]
+                    fields.append("conference")
                 if not current.publication_year:
                     year = _resolve_year("", paper, url)
                     if year:

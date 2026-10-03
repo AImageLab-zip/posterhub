@@ -449,3 +449,9 @@ def process_bot_poster_task(self, platform, recipient, poster_id, notes=None, ta
                 return {"status": "analysis_failed", "poster_id": poster_id}
 
             raise self.retry(exc=exc)
+
+
+@shared_task(acks_late=True)
+def sync_proceedings_task(source_ids=None):
+    from .proceedings import sync_sources
+    return sync_sources(source_ids)

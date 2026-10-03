@@ -6,12 +6,17 @@ import threading
 import time
 import unicodedata
 import xml.etree.ElementTree as ET
+from difflib import SequenceMatcher
 from urllib.parse import quote_plus, unquote, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 from django.conf import settings
 from django.core.cache import cache
+from django.db import DatabaseError
+from django.db.models import Q
+
+from .models import ProceedingsPaper
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,10 @@ EXACT_MATCH_SCORE = 1.0
 STRONG_SIMILARITY = 0.75
 NAMED_PROJECT_SIMILARITY = 0.5
 MIN_SHARED_WORDS = 3
+ACRONYM_SIMILARITY = 0.8
+MIN_SHARED_AUTHOR_TOKENS = 2
+MIN_CONTAINED_TITLE_WORDS = 5
+PROCEEDINGS_QUERY_WORDS = 4
 
 _ARXIV_ID = r"(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?"
 _ARXIV_VERSION = re.compile(r"v\d+$", re.I)
@@ -160,6 +169,7 @@ def _paper(**fields):
     result = {
         "title": "", "paper_url": "", "pdf_url": "", "arxiv_id": "", "doi": "",
         "authors": "", "abstract": "", "year": None, "_blocked": False, "source": "",
+        "conference": "",
     }
     result.update(fields)
     return result
@@ -425,8 +435,81 @@ def _search_google_scholar(query, limit=5):
         response.close()
 
 
-def search_paper(query, *, query_hint="", arxiv_id=""):
+def normalize_title(title):
+    return " ".join(re.findall(r"\w{2,}", _clean_title(title).lower()))
+
+
+def _author_tokens(authors):
+    text = unicodedata.normalize("NFKD", authors if isinstance(authors, str) else "")
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return set(re.findall(r"[^\W\d_]{3,}", text.lower()))
+
+
+def _similar_acronyms(title, candidate_title):
+    q_name, c_name = _compact(_acronym(title)), _compact(_acronym(candidate_title))
+    if not q_name or not c_name or re.sub(r"\D", "", q_name) != re.sub(r"\D", "", c_name):
+        return False
+    return SequenceMatcher(None, q_name, c_name).ratio() >= ACRONYM_SIMILARITY
+
+
+def _truncated_title(title, candidate_title):
+    q_words = _title_words(title)
+    return len(q_words) >= MIN_CONTAINED_TITLE_WORDS and q_words <= _title_words(candidate_title)
+
+
+def _proceedings_score(title, authors, candidate):
+    shared = len(_author_tokens(authors) & _author_tokens(candidate.authors))
+    score = _match_score(title, candidate.title)
+    if score or shared < MIN_SHARED_AUTHOR_TOKENS:
+        return score, shared
+    similarity = _title_similarity(title, candidate.title)
+    if (_similar_acronyms(title, candidate.title) and similarity >= STRONG_SIMILARITY
+            and len(_title_words(title) & _title_words(candidate.title)) >= MIN_SHARED_WORDS):
+        return similarity, shared
+    if _truncated_title(title, candidate.title):
+        return similarity, shared
+    return 0.0, shared
+
+
+def _search_proceedings(title, authors="", conference=""):
+    words = sorted(_title_words(title), key=lambda w: (-len(w), w))[:PROCEEDINGS_QUERY_WORDS]
+    if len(words) < 2:
+        return None
+    query = Q()
+    for i, first in enumerate(words):
+        for second in words[i + 1:]:
+            query |= Q(normalized_title__contains=first) & Q(normalized_title__contains=second)
+    try:
+        candidates = list(ProceedingsPaper.objects.filter(query, source__enabled=True).select_related("source"))
+    except DatabaseError as exc:
+        logger.warning("Proceedings lookup unavailable (%s); continuing with online sources", type(exc).__name__)
+        return None
+    conference_key = _compact(conference or "")
+    best, best_key = None, None
+    for candidate in candidates:
+        score, shared = _proceedings_score(title, authors, candidate)
+        if not score:
+            continue
+        key = (round(score, 3), _compact(candidate.source.conference) in conference_key,
+               shared, bool(candidate.pdf_url), candidate.source.year)
+        if best_key is None or key > best_key:
+            best, best_key = candidate, key
+    if best is None:
+        return None
+    source = best.source
+    return _paper(
+        title=best.title, paper_url=best.url, pdf_url=best.pdf_url, authors=best.authors,
+        year=source.year, source="proceedings", conference=f"{source.conference} {source.year}",
+    )
+
+
+def search_paper(query, *, query_hint="", arxiv_id="", authors="", conference=""):
     title = _clean_title(query)
+    if title:
+        paper = _search_proceedings(title, authors, conference)
+        if paper:
+            logger.info("Paper matched via %s proceedings: %s", paper["conference"], paper["paper_url"])
+            return paper
     if arxiv_id:
         paper = _get_arxiv_paper(arxiv_id)
         if paper and (not title or _match_score(title, paper["title"])):
