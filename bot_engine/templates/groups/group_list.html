@@ -43,11 +43,11 @@
                     <line x1="12" y1="9" x2="12" y2="13"/>
                     <line x1="12" y1="17" x2="12.01" y2="17"/>
                 </svg>
-                {{ pending_users|length }} user{{ pending_users|length|pluralize }} awaiting group assignment
+                <span class="pending-count">{{ pending_users|length }} user{{ pending_users|length|pluralize }} awaiting group assignment</span>
             </div>
             <div class="pending-sub">These accounts have logged in but cannot interact with the platform until you place them into a research group.</div>
             {% for u in pending_users %}
-            <div class="pending-row">
+            <div class="pending-row" data-pending-row="{{ u.pk }}">
                 <div class="pending-name">
                     {% if u.first_name or u.last_name %}{{ u.first_name|title }} {{ u.last_name|title }}{% else %}{{ u.username }}{% endif %}
                     <span class="pending-username">{{ u.username }}</span>
@@ -58,10 +58,11 @@
                     <form method="POST" action="" class="pending-form" data-pending-user-id="{{ u.pk }}">
                         {% csrf_token %}
                         <input type="hidden" name="user_ids" value="{{ u.pk }}">
+                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
                         <select name="group_select" required onchange="onPendingGroupChange(this)">
                             <option value="" disabled selected>Add to group…</option>
                             {% for g in groups %}
-                                <option value="{% url 'group_add_member' g.pk %}">{{ g.name }}</option>
+                                <option value="{% url 'group_add_member' g.pk %}" data-group-id="{{ g.pk }}">{{ g.name }}</option>
                             {% endfor %}
                         </select>
                         <button type="submit" class="group-btn primary" style="height:32px; font-size:0.78em;">Add</button>
@@ -103,7 +104,7 @@
         </div>
 
         {% for group in groups %}
-        <div class="group-card">
+        <div class="group-card" data-group-id="{{ group.pk }}">
             <div class="group-card-header">
                 <div>
                     <span class="group-card-name">{{ group.name }}</span>
@@ -132,14 +133,14 @@
             <div class="group-card-members">
                 {% with members=group.memberships.all %}
                     {% if members %}
-                        <strong>Members ({{ members|length }}):</strong>
+                        <strong>Members (<span class="member-count">{{ members|length }}</span>):</strong>
                         {% for m in members %}
                             <span class="member-chip {% if m.is_primary %}is-primary{% endif %}">
                                 {{ m.user.get_full_name|title|default:m.user.username }}{% if m.is_primary %} &#9733;{% endif %}
                             </span>
                         {% endfor %}
                     {% else %}
-                        <span style="opacity:0.5;">No members yet</span>
+                        <span class="no-members" style="opacity:0.5;">No members yet</span>
                     {% endif %}
                 {% endwith %}
             </div>

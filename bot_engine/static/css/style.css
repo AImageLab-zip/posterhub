@@ -2331,6 +2331,8 @@ body.upload-page .dark-toggle { bottom: 24px; }
     .mg-container { max-width: 800px; margin: 0 auto; padding: 0 0 60px; }
     .mg-header { margin-bottom: 18px; }
     .mg-header h1 { font-size: 1.5em; font-weight: 700; color: var(--text-strong); }
+    .mg-section { margin-top: 36px; }
+    .mg-section h2 { font-size: 1.2em; font-weight: 700; color: var(--text-strong); }
     .mg-intro { font-size: 0.88em; color: var(--text-muted); line-height: 1.55; margin-top: 6px; }
     .mg-card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-lg); padding: 18px 22px; margin-bottom: 12px; box-shadow: var(--shadow-card); display: flex; align-items: center; gap: 16px; transition: border-color 0.18s; }
     .mg-card.is-primary { border-color: var(--primary); }

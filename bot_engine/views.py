@@ -2685,6 +2685,8 @@ def group_add_member(request, group_id):
     user_ids = request.POST.getlist("user_ids") or [request.POST.get("user_id")]
     user_ids = [uid for uid in user_ids if uid]
     if not user_ids:
+        if _is_ajax(request):
+            return JsonResponse({"success": False, "error": "Select at least one user."}, status=400)
         messages.error(request, "Select at least one user.")
         return redirect("group_edit", group_id=group.pk)
 
@@ -2692,20 +2694,37 @@ def group_add_member(request, group_id):
     added, already = [], []
     for user in users:
         is_first_group = not UserGroupMembership.objects.filter(user=user).exists()
-        _, created = UserGroupMembership.objects.get_or_create(
+        membership, created = UserGroupMembership.objects.get_or_create(
             user=user, group=group,
             defaults={"is_primary": is_first_group},
         )
-        (added if created else already).append(user)
+        (added if created else already).append(membership)
 
-    PendingAssignmentDismissal.objects.filter(user__in=added).delete()
+    PendingAssignmentDismissal.objects.filter(user__in=[m.user for m in added]).delete()
 
+    def _name(m):
+        return m.user.get_full_name().title() or m.user.username
+
+    notices = []
     if added:
-        names = ", ".join((u.get_full_name().title() or u.username) for u in added)
-        messages.success(request, f'Added to "{group.name}": {names}.')
+        notices.append(("success", f'Added to "{group.name}": {", ".join(map(_name, added))}.'))
     if already:
-        names = ", ".join((u.get_full_name().title() or u.username) for u in already)
-        messages.info(request, f'Already members of "{group.name}": {names}.')
+        notices.append(("info", f'Already members of "{group.name}": {", ".join(map(_name, already))}.'))
+
+    if _is_ajax(request):
+        return JsonResponse({
+            "success": True,
+            "messages": [{"type": t, "text": text} for t, text in notices],
+            "added": [{"user_id": m.user_id, "name": _name(m), "is_primary": m.is_primary} for m in added],
+            "already": [m.user_id for m in already],
+        })
+    for level, text in notices:
+        getattr(messages, level)(request, text)
+    next_url = request.POST.get("next", "").strip()
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure(),
+    ):
+        return redirect(next_url)
     return redirect("group_edit", group_id=group.pk)
 
 
@@ -2858,6 +2877,11 @@ def my_groups(request):
         .select_related("group")
         .order_by("-is_primary", "group__name")
     )
+    other_groups = (
+        ResearchGroup.objects
+        .exclude(memberships__user=request.user)
+        .prefetch_related("interests")
+    )
     from urllib.parse import urlparse
     referer_path = urlparse(request.META.get("HTTP_REFERER", "")).path or ""
     back_target = "dashboard"
@@ -2867,6 +2891,7 @@ def my_groups(request):
         back_target = "conference"
     return render(request, "my_groups.html", {
         "memberships": memberships,
+        "other_groups": other_groups,
         "back_target": back_target,
     })
 

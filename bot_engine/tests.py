@@ -144,6 +144,20 @@ class GroupManagementAccessTests(TestCase):
                     self.assertContains(response, edit_href)
                     self.assertContains(response, "Edit group &amp; interests")
 
+    def test_my_groups_lists_other_groups_with_their_interests(self):
+        other = ResearchGroup.objects.create(name="Other lab")
+        ResearchInterest.objects.create(group=other, text="Robot perception")
+        self.sign_in("member")
+        response = self.client.get(reverse("my_groups"))
+        self.assertContains(response, "Other Groups")
+        self.assertContains(response, "Other lab")
+        self.assertContains(response, "Robot perception")
+        self.assertEqual(
+            [g.pk for g in response.context["other_groups"]],
+            list(ResearchGroup.objects.exclude(memberships__user=self.users["member"]).values_list("pk", flat=True)),
+        )
+        self.assertNotIn(self.group.pk, [g.pk for g in response.context["other_groups"]])
+
     def test_authorized_users_can_open_group_and_interest_forms(self):
         for role in self.superusers + self.managers:
             with self.subTest(role=role):
@@ -229,6 +243,39 @@ class GroupManagementAccessTests(TestCase):
                 response = self.client.post(reverse("group_remove_member", args=[self.group.pk, target.pk]))
                 self.assertRedirects(response, reverse("group_edit", args=[self.group.pk]), fetch_redirect_response=False)
                 self.assertFalse(UserGroupMembership.objects.filter(user=target, group=self.group).exists())
+
+    def test_add_member_from_pending_list_returns_to_group_list(self):
+        target = self.users["no_membership"]
+        self.sign_in("super_no_membership")
+        next_url = reverse("group_list") + "?q=lab"
+        response = self.client.post(reverse("group_add_member", args=[self.group.pk]), {
+            "user_ids": [target.pk], "next": next_url,
+        })
+        self.assertRedirects(response, next_url, fetch_redirect_response=False)
+        self.assertTrue(UserGroupMembership.objects.filter(user=target, group=self.group).exists())
+
+        response = self.client.post(reverse("group_add_member", args=[self.group.pk]), {
+            "user_ids": [target.pk], "next": "https://evil.example.com/",
+        })
+        self.assertRedirects(response, reverse("group_edit", args=[self.group.pk]), fetch_redirect_response=False)
+
+    def test_add_member_ajax_returns_json_without_redirect(self):
+        target = self.users["no_membership"]
+        self.sign_in("super_no_membership")
+        url = reverse("group_add_member", args=[self.group.pk])
+        response = self.client.post(url, {"user_ids": [target.pk]}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual([m["user_id"] for m in data["added"]], [target.pk])
+        self.assertTrue(data["added"][0]["is_primary"])
+        self.assertEqual(data["messages"][0]["type"], "success")
+
+        response = self.client.post(url, {"user_ids": [target.pk]}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.json()["already"], [target.pk])
+
+        response = self.client.post(url, {}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 400)
 
     def test_removal_dialog_warns_only_when_it_is_the_users_last_group(self):
         warning = "This is the user's last group"

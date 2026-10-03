@@ -74,6 +74,30 @@
         </div>
         {% endfor %}
 
+        {% if other_groups %}
+        <div class="mg-header mg-section">
+            <h2>Other Groups</h2>
+            <p class="mg-intro">The other research groups on PosterHub and what they work on.</p>
+        </div>
+
+        {% for group in other_groups %}
+        <div class="mg-card">
+            <div class="mg-card-body">
+                <div class="mg-card-name">{{ group.name }}</div>
+                {% with interests=group.interests.all %}
+                    {% if interests %}
+                        <div class="mg-card-desc">
+                            {% for i in interests %}
+                                <div>&bull; {{ i.text }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+            </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+
     </div>
 </div>
 
