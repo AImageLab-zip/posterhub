@@ -228,6 +228,24 @@ class EnrichmentTests(SimpleTestCase):
         self.assertEqual(result['publication_year'], 2025)
         self.assertEqual(self.github.call_args.kwargs['pdf_url'], self.pdf.return_value)
 
+    def test_verified_paper_title_replaces_the_title_read_from_the_poster(self):
+        self.info['title'] = 'Skin-R1: Clinical Knowledge Guided Dermatologic Diagnosis Using Vision Language Model'
+        self.lookup.return_value = paper()
+        self.assertEqual(ai.analyze_and_enrich('unused')['title'], SKIN)
+
+    def test_latex_in_the_paper_title_is_cleaned(self):
+        self.lookup.return_value = paper(title=r'$\alpha$-DPO: Robust Preference Alignment for Diffusion Models')
+        self.info['title'] = 'a-DPO: Robust Preference Alignment for Diffusion Models'
+        self.assertEqual(ai.analyze_and_enrich('unused')['title'], 'α-DPO: Robust Preference Alignment for Diffusion Models')
+
+    def test_google_scholar_titles_do_not_replace_the_poster_title(self):
+        self.lookup.return_value = {**paper(title=SKIN[:40] + '…'), 'source': 'google_scholar'}
+        self.assertEqual(ai.analyze_and_enrich('unused')['title'], SKIN)
+
+    def test_poster_title_is_kept_without_a_matched_paper(self):
+        self.info['title'] = 'Poster Title Read From The Image'
+        self.assertEqual(ai.analyze_and_enrich('unused')['title'], 'Poster Title Read From The Image')
+
     def test_non_arxiv_pdf_remains_accessible_when_no_landing_page_is_found(self):
         self.pdf.return_value = 'https://publisher.example/paper.pdf'
         self.assertEqual(ai.analyze_and_enrich('unused')['paper_link'], self.pdf.return_value)

@@ -10,6 +10,7 @@ from django.test import SimpleTestCase, TestCase
 
 from . import paper_search as search
 from . import proceedings
+from . import text_cleaning
 from . import utils_ai as ai
 from .models import ProceedingsPaper, ProceedingsSource, ResearchPoster
 
@@ -147,23 +148,23 @@ class TextCleaningTests(SimpleTestCase):
         }
         for raw, clean in cases.items():
             with self.subTest(raw=raw):
-                self.assertEqual(proceedings._title_text(raw), clean)
+                self.assertEqual(text_cleaning.clean_title(raw), clean)
 
     def test_quotes_are_unwrapped_or_made_typographic(self):
-        self.assertEqual(proceedings._title_text('"BK-SDM: A Lightweight Version of Stable Diffusion"'),
+        self.assertEqual(text_cleaning.clean_title('"BK-SDM: A Lightweight Version of Stable Diffusion"'),
                          'BK-SDM: A Lightweight Version of Stable Diffusion')
-        self.assertEqual(proceedings._title_text('From ``Sure" to ``Sorry": Detecting Jailbreaks'),
+        self.assertEqual(text_cleaning.clean_title('From ``Sure" to ``Sorry": Detecting Jailbreaks'),
                          'From “Sure” to “Sorry”: Detecting Jailbreaks')
-        self.assertEqual(proceedings._title_text("Is `Right' Right? Object Orientation"),
+        self.assertEqual(text_cleaning.clean_title("Is `Right' Right? Object Orientation"),
                          'Is ‘Right’ Right? Object Orientation')
 
     def test_trailing_periods_are_dropped_except_after_abbreviations(self):
-        self.assertEqual(proceedings._title_text('Efficient Image Editing via Token Reuse.'), 'Efficient Image Editing via Token Reuse')
-        self.assertEqual(proceedings._title_text('Benchmarks by Smith et al.'), 'Benchmarks by Smith et al.')
+        self.assertEqual(text_cleaning.clean_title('Efficient Image Editing via Token Reuse.'), 'Efficient Image Editing via Token Reuse')
+        self.assertEqual(text_cleaning.clean_title('Benchmarks by Smith et al.'), 'Benchmarks by Smith et al.')
 
     def test_plain_text_is_left_alone(self):
         for title in ('Saving $100 with Budget-Aware Training', 'How <SEG> Token Works', 'D^M: Deformation-Driven Diffusion'):
-            self.assertEqual(proceedings._title_text(title), title)
+            self.assertEqual(text_cleaning.clean_title(title), title)
 
     def test_author_names_lose_entities_accent_markup_and_invisible_characters(self):
         cases = {
@@ -174,7 +175,7 @@ class TextCleaningTests(SimpleTestCase):
         }
         for raw, clean in cases.items():
             with self.subTest(raw=raw):
-                self.assertEqual(proceedings._text(raw), clean)
+                self.assertEqual(text_cleaning.clean_text(raw), clean)
 
 
 class ProceedingsSyncTests(TestCase):

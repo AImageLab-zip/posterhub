@@ -19,6 +19,8 @@ from .paper_search import (
     find_paper_from_github, search_paper,
 )
 
+from .text_cleaning import clean_text, clean_title
+
 from .prompts import (
     POSTER_PROMPT,
     WHY_USEFUL_PROMPT,
@@ -864,6 +866,20 @@ def generate_why_useful(summary="", user_notes="", user_tags="", research_intere
     ) or ""
 
 
+TRUSTED_TITLE_SOURCES = {"proceedings", "arxiv", "arxiv_page", "arxiv_web", "semantic_scholar"}
+
+
+def _resolve_title(poster_title, paper_result):
+    if not paper_result or paper_result.get("source") not in TRUSTED_TITLE_SOURCES:
+        return poster_title
+    paper_title = clean_title(paper_result.get("title", ""))
+    if not paper_title:
+        return poster_title
+    if paper_title != poster_title:
+        logger.info("Title taken from matched paper: %r -> %r", poster_title, paper_title)
+    return paper_title
+
+
 def _resolve_year(ai_year, paper_result, paper_link):
     if paper_result and paper_result.get("source") == "proceedings" and paper_result.get("year"):
         return paper_result["year"]
@@ -976,7 +992,7 @@ def _analyze_and_enrich(image_path, overrides):
             authors_from_api = paper_result.get("authors", "")
             abstract_from_api = paper_result.get("abstract", "")
 
-    authors_raw = authors_from_api
+    authors_raw = clean_text(authors_from_api)
     authors_source = "paper_metadata" if authors_raw else ""
     if not authors_raw and paper_link:
         authors_raw = fetch_authors(paper_link, title=title)
@@ -1006,7 +1022,7 @@ def _analyze_and_enrich(image_path, overrides):
                 github_url or "not_found", bool(description))
     return {
         "is_research_poster": info.get("is_research_poster", True),
-        "title":       info.get("title", "Untitled"),
+        "title":       _resolve_title(info.get("title", "Untitled"), paper_result),
         "authors":     _unique_authors(authors_raw),
         "summary":     description,
         "subfields":   _parse_subfields(info.get("subfields", [])),
