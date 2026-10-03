@@ -64,6 +64,12 @@ class ProceedingsParserTests(SimpleTestCase):
         [record] = parse('miccai_json', body, url='https://papers.miccai.org/miccai-2026/js/search.json')
         self.assertEqual((record['url'], record['pdf_url']), ('https://papers.miccai.org/miccai-2026/0002-Paper1.html', ''))
 
+    def test_miccai_json_splits_lowercase_and_between_authors(self):
+        body = json.dumps([{'title': 'A MICCAI 2024 Paper Title', 'url': '/p.html', 'pdflink': '/p.pdf',
+                            'authors': 'Alsharid, Mohammad and Papageorghiou, Aris T. and Noble, J. Alison'}])
+        [record] = parse('miccai_json', body)
+        self.assertEqual(record['authors'], 'Mohammad Alsharid, Aris T. Papageorghiou, J. Alison Noble')
+
     def test_virtual_site_json_picks_paper_page_and_pdf(self):
         body = json.dumps({'results': [
             {'name': 'NeurIPS Paper', 'authors': [{'fullname': 'Ada Lovelace'}, {'fullname': 'Alan Turing'}],
@@ -127,6 +133,48 @@ class ProceedingsParserTests(SimpleTestCase):
         choices = {key for key, _ in ProceedingsSource.PARSER_CHOICES}
         self.assertEqual(choices, set(proceedings.PARSERS))
         self.assertEqual(choices, {row['parser'] for row in proceedings.PARSER_GUIDE})
+
+
+class TextCleaningTests(SimpleTestCase):
+    def test_latex_in_titles_becomes_plain_text(self):
+        cases = {
+            r'{$\tau$}-bench: \underline{T}ool-\underline{A}gent Interaction': 'τ-bench: Tool-Agent Interaction',
+            r'$\boldsymbol{\mu}\mathbf{P^2}$: Sharpness Aware Minimization': 'μP²: Sharpness Aware Minimization',
+            r'\(\varepsilon\)-Optimally Solving Zero-Sum POSGs': 'ε-Optimally Solving Zero-Sum POSGs',
+            r'$\alpha$Matte4K \& $\mu$Matting: Dataset and Model': 'αMatte4K & μMatting: Dataset and Model',
+            r'$\mathbb{R}^{2k}$ is Large Enough for Top-$k$ Retrieval': 'R^(2k) is Large Enough for Top-k Retrieval',
+            r'(FL)$^2$: Overcoming Few Labels': '(FL)²: Overcoming Few Labels',
+        }
+        for raw, clean in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(proceedings._title_text(raw), clean)
+
+    def test_quotes_are_unwrapped_or_made_typographic(self):
+        self.assertEqual(proceedings._title_text('"BK-SDM: A Lightweight Version of Stable Diffusion"'),
+                         'BK-SDM: A Lightweight Version of Stable Diffusion')
+        self.assertEqual(proceedings._title_text('From ``Sure" to ``Sorry": Detecting Jailbreaks'),
+                         'From “Sure” to “Sorry”: Detecting Jailbreaks')
+        self.assertEqual(proceedings._title_text("Is `Right' Right? Object Orientation"),
+                         'Is ‘Right’ Right? Object Orientation')
+
+    def test_trailing_periods_are_dropped_except_after_abbreviations(self):
+        self.assertEqual(proceedings._title_text('Efficient Image Editing via Token Reuse.'), 'Efficient Image Editing via Token Reuse')
+        self.assertEqual(proceedings._title_text('Benchmarks by Smith et al.'), 'Benchmarks by Smith et al.')
+
+    def test_plain_text_is_left_alone(self):
+        for title in ('Saving $100 with Budget-Aware Training', 'How <SEG> Token Works', 'D^M: Deformation-Driven Diffusion'):
+            self.assertEqual(proceedings._title_text(title), title)
+
+    def test_author_names_lose_entities_accent_markup_and_invisible_characters(self):
+        cases = {
+            "R{{\\&#x27;e}}mi Munos, Fearghal O&amp;#x27;Donncha": "Rémi Munos, Fearghal O'Donncha",
+            '\u202aYotam Alexander\u202c\u200f, Yonatan Slutzky': 'Yotam Alexander, Yonatan Slutzky',
+            'Riccardo D`Elia': "Riccardo D'Elia",
+            'Fran{\\c{c}}ois Fleuret, J{\\"o}rg Mayer, \\v{S}imon Ko\\v{s}': 'François Fleuret, Jörg Mayer, Šimon Koš',
+        }
+        for raw, clean in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(proceedings._text(raw), clean)
 
 
 class ProceedingsSyncTests(TestCase):
