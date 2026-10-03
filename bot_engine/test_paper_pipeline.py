@@ -52,6 +52,7 @@ class PaperLookupTests(SimpleTestCase):
         self.http = self.enterContext(patch.object(search.requests, 'get', side_effect=AssertionError('Unexpected network request')))
         self.enterContext(patch.object(search.time, 'sleep'))
         self.enterContext(patch.object(search, '_wait_for_arxiv', return_value=True))
+        self.enterContext(patch.object(search, '_search_proceedings', return_value=None))
 
     def test_arxiv_identifiers_and_versions_are_normalized(self):
         for value in ('2511.14900v2', 'arXiv:2511.14900',
@@ -225,7 +226,7 @@ class EnrichmentTests(SimpleTestCase):
         result = ai.analyze_and_enrich('unused')
         self.assertEqual(result['paper_link'], 'https://arxiv.org/abs/2511.14900')
         self.assertEqual(result['publication_year'], 2025)
-        self.assertEqual(self.github.call_args.kwargs['paper_url'], result['paper_link'])
+        self.assertEqual(self.github.call_args.kwargs['pdf_url'], self.pdf.return_value)
 
     def test_non_arxiv_pdf_remains_accessible_when_no_landing_page_is_found(self):
         self.pdf.return_value = 'https://publisher.example/paper.pdf'
@@ -340,42 +341,34 @@ class PDFValidationTests(SimpleTestCase):
 
 
 class GitHubLookupTests(SimpleTestCase):
-    @override_settings(GITHUB_TOKEN='top-secret-token')
-    def test_repository_search_authenticates_without_leaking_the_token(self):
-        payload = {'items': [{'name': 'phenolip', 'html_url': 'https://github.com/org/PhenoLIP'}]}
-        with patch.object(ai.requests, 'get', return_value=response(json.dumps(payload))) as http, \
-             self.assertLogs(ai.logger, level='INFO') as logs:
-            ai.logger.info('search starting')
-            found = ai._search_github_api('PhenoLIP: a study', github_query='PhenoLIP')
-        self.assertEqual(found, 'https://github.com/org/PhenoLIP')
-        self.assertEqual(http.call_args.kwargs['headers']['Authorization'], 'Bearer top-secret-token')
-        self.assertNotIn('top-secret-token', '\n'.join(logs.output))
+    def test_clone_urls_resolve_to_the_repository_not_the_owner(self):
+        repo = 'https://github.com/juhyeon-ai/WSI-FE-Selection'
+        with patch.object(ai, '_url_exists', side_effect=lambda url: url in {repo, 'https://github.com/juhyeon-ai'}):
+            found = ai._first_valid_github('Link to the Code Repository https://github.com/juhyeon-ai/WSI-FE-Selection.git')
+        self.assertEqual(found, repo)
 
-    @override_settings(GITHUB_TOKEN='')
-    def test_repository_search_works_unauthenticated(self):
-        payload = {'items': [{'name': 'phenolip', 'html_url': 'https://github.com/org/PhenoLIP'}]}
-        with patch.object(ai.requests, 'get', return_value=response(json.dumps(payload))) as http:
-            ai._search_github_api('PhenoLIP: a study', github_query='PhenoLIP')
-        self.assertNotIn('Authorization', http.call_args.kwargs['headers'])
+    def test_repository_names_wrapped_at_a_hyphen_in_pdf_text_are_rejoined(self):
+        text = 'Code is available at https://github.com/juhyeon-ai/WSI-\nFE-Selection.git\nKeywords: WSI'
+        self.assertIn('github.com/juhyeon-ai/WSI-FE-Selection.git', ai._normalize_github_urls_in_text(text))
 
-    def test_search_is_skipped_when_the_name_is_absent_from_the_title(self):
-        with patch.object(ai.requests, 'get', side_effect=AssertionError('Unexpected network request')):
-            self.assertEqual(ai._search_github_api('A study of networks', github_query='phenolip'), '')
-            self.assertEqual(ai._search_github_api('', github_query='phenolip'), '')
-            self.assertEqual(ai._search_github_api(SKIN, github_query=''), '')
+    def test_repository_is_taken_from_the_pdf_before_the_poster(self):
+        with patch.object(ai, '_find_github_in_pdf', return_value='https://github.com/org/from-pdf'), \
+             patch.object(ai, '_url_exists', return_value=True):
+            self.assertEqual(ai.find_github_repo('https://example.org/p.pdf', 'github.com/org/from-poster'),
+                             'https://github.com/org/from-pdf')
 
-    def test_unrelated_repository_names_are_rejected(self):
-        payload = {'items': [{'name': 'phenolip-fork-2', 'html_url': 'https://github.com/other/phenolip-fork-2'}]}
-        with patch.object(ai.requests, 'get', return_value=response(json.dumps(payload))):
-            self.assertEqual(ai._search_github_api('PhenoLIP: a study', github_query='PhenoLIP'), '')
+    def test_repository_printed_on_the_poster_is_used_when_the_pdf_has_none(self):
+        with patch.object(ai, '_find_github_in_pdf', return_value=''), \
+             patch.object(ai, '_url_exists', side_effect=lambda url: url == 'https://github.com/org/repo'):
+            self.assertEqual(ai.find_github_repo('https://example.org/p.pdf', 'https://github.com/org/repo'),
+                             'https://github.com/org/repo')
+            self.assertEqual(ai.find_github_repo('', 'https://github.com/org/missing-repo'), '')
 
-    def test_api_errors_and_malformed_results_degrade_quietly(self):
-        for reply in (response(status=403), response(status=500), response('not json'), response('{"items": 3}')):
-            with self.subTest(status=reply.status_code):
-                with patch.object(ai.requests, 'get', return_value=reply):
-                    self.assertEqual(ai._search_github_api('PhenoLIP: a study', github_query='PhenoLIP'), '')
-        with patch.object(ai.requests, 'get', side_effect=requests.Timeout):
-            self.assertEqual(ai._search_github_api('PhenoLIP: a study', github_query='PhenoLIP'), '')
+    def test_no_repository_is_guessed_without_a_pdf_or_poster_link(self):
+        with patch.object(ai.requests, 'get', side_effect=AssertionError('Unexpected network request')), \
+             patch.object(ai.requests, 'head', side_effect=AssertionError('Unexpected network request')):
+            self.assertEqual(ai.find_github_repo('', ''), '')
+            self.assertEqual(ai.find_github_repo('', 'PhenoLIP'), '')
 
 
 @override_settings(STORAGES={

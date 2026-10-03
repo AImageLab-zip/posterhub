@@ -1,0 +1,29 @@
+{% extends "admin/change_list.html" %}
+
+{% block content %}
+{{ block.super }}
+<div class="module" style="margin-top: 2em;">
+  <h2>Scraper guide</h2>
+  <p style="padding: 0 10px;">
+    Each source is one paper list for one conference year. Enabled sources are refreshed every week
+    (and right after you add or change one); poster analysis checks these lists before searching
+    arXiv, Semantic Scholar and Google Scholar. A source that fails or finds no papers keeps its previous list.
+  </p>
+  <table style="width: 100%;">
+    <thead>
+      <tr><th>Scraper</th><th>Good for</th><th>URL to use</th><th>Options</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      {% for row in parser_guide %}
+      <tr>
+        <td><code>{{ row.parser }}</code></td>
+        <td>{{ row.sites }}</td>
+        <td><code>{{ row.url }}</code></td>
+        <td>{{ row.options }}</td>
+        <td>{{ row.notes }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

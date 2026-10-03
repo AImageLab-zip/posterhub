@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -148,7 +149,6 @@ if not DEBUG:
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SEMANTIC_SCHOLAR_API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 WHATSAPP_PHONE_ID = os.getenv("WHATSAPP_PHONE_ID")
@@ -188,6 +188,17 @@ CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
 
 CELERY_TASK_DEFAULT_QUEUE = "default"
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+
+CELERY_BEAT_SCHEDULE = {
+    "sync-proceedings-weekly": {
+        "task": "bot_engine.tasks.sync_proceedings_task",
+        "schedule": crontab(
+            minute=0,
+            hour=os.getenv("PROCEEDINGS_SYNC_HOUR", "4"),
+            day_of_week=os.getenv("PROCEEDINGS_SYNC_DAY_OF_WEEK", "mon"),
+        ),
+    },
+}
 
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)

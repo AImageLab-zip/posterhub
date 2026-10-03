@@ -92,14 +92,6 @@ def _ss_headers():
     return {"x-api-key": _SS_API_KEY} if _SS_API_KEY else {}
 
 
-def _github_headers():
-    headers = {"Accept": "application/vnd.github+json"}
-    token = (getattr(settings, "GITHUB_TOKEN", "") or "").strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
-
-
 def _http_get(url, *, timeout=PAGE_TIMEOUT, headers=None, params=None, stream=False):
     return requests.get(
         url,
@@ -252,7 +244,7 @@ def _fallback():
         "institution":        "",
         "subfields":          "",
         "search_query":       "",
-        "github_query":       "",
+        "github_url":         "",
     }
 
 
@@ -495,6 +487,7 @@ def _extract_github_from_annotations(reader):
 
 
 def _normalize_github_urls_in_text(text):
+    text = re.sub(r"(github\.com/[\w\-\.]+/[\w\-\.]*-)[ \t]*\n\s*([\w\-\.]+)", r"\1\2", text)
     text = re.sub(r"(github\.com/[\w\-\.]+/)\s+([\w\-\.]+)", r"\1\2", text)
     text = re.sub(r"(github\.com/[\w\-\.]*)\s+([\w\-\.]*/)\s*(\S+)", r"\1\2\3", text)
     return text
@@ -526,7 +519,7 @@ def _first_valid_github(text):
 
     seen_repos = []
     for match in re.findall(repo_pat, text, re.I):
-        repo  = match.strip().rstrip("/").rstrip(".")
+        repo  = re.sub(r"\.git$", "", match.strip().rstrip("/").rstrip("."), flags=re.I)
         parts = repo.split("/")
         if len(parts) == 2 and parts[0] and parts[1].lower() not in skip_parts:
             url = f"https://github.com/{repo}"
@@ -651,71 +644,13 @@ def _pdf_text(reader, max_pages=None):
     return "\n".join(collected)[:MAX_PDF_TEXT_CHARS]
 
 
-def _search_github_api(title, github_query=""):
-    if not github_query or not github_query.strip():
-        return ""
-    gq = github_query.strip().lower()
-    if not title:
-        return ""
-    title_tokens = {w.lower() for w in re.findall(r"[\w\-]+", title)}
-    if gq not in title_tokens:
-        return ""
-    try:
-        response = _http_get(
-            "https://api.github.com/search/repositories",
-            params={"q": gq, "sort": "best-match", "per_page": 5},
-            headers=_github_headers(),
-            timeout=GITHUB_API_TIMEOUT,
-        )
-    except requests.RequestException as e:
-        logger.info("GitHub repository search failed: %s", type(e).__name__)
-        return ""
-    try:
-        if response.status_code != 200:
-            logger.info("GitHub repository search returned HTTP %s", response.status_code)
-            return ""
-        items = response.json().get("items", [])
-    except (ValueError, AttributeError):
-        logger.info("GitHub repository search returned malformed results")
-        return ""
-    finally:
-        response.close()
-    if not isinstance(items, list):
-        return ""
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        if (item.get("name") or "").strip().lower() == gq:
-            return item.get("html_url", "")
-    return ""
-
-
-def _scrape_page_for_github(url):
-    text = _fetch_text(url)
-    return _first_valid_github(text) if text else ""
-
-
-def find_github_repo(pdf_url="", title="", github_query="", paper_url="", doi=""):
+def find_github_repo(pdf_url="", poster_github=""):
     if pdf_url:
         url = _find_github_in_pdf(pdf_url)
         if url:
             return url
-
-    pages_to_try = []
-    if doi:
-        pages_to_try.append(f"https://doi.org/{doi}")
-    if paper_url:
-        pages_to_try.append(paper_url)
-    for page in pages_to_try:
-        url = _scrape_page_for_github(page)
-        if url:
-            return url
-
-    if title or github_query:
-        url = _search_github_api(title, github_query=github_query)
-        if url:
-            return url
-
+    if isinstance(poster_github, str) and "github.com" in poster_github.lower():
+        return _first_valid_github(poster_github)
     return ""
 
 
@@ -930,6 +865,9 @@ def generate_why_useful(summary="", user_notes="", user_tags="", research_intere
 
 
 def _resolve_year(ai_year, paper_result, paper_link):
+    if paper_result and paper_result.get("source") == "proceedings" and paper_result.get("year"):
+        return paper_result["year"]
+
     if ai_year and str(ai_year).strip().isdigit():
         return int(str(ai_year).strip()[:4])
 
@@ -996,6 +934,7 @@ def _analyze_and_enrich(image_path, overrides):
     if not user_paper_link:
         paper_result = search_paper(
             title, query_hint=search_query, arxiv_id=info.get("arxiv_id", ""),
+            authors=str(info.get("authors") or ""), conference=str(info.get("conference") or ""),
         )
 
     paper_link        = user_paper_link
@@ -1025,10 +964,7 @@ def _analyze_and_enrich(image_path, overrides):
 
     github_url = overrides.get("github_link", "") or find_github_repo(
         pdf_url=pdf_url,
-        title=title,
-        github_query=info.get("github_query", ""),
-        paper_url=paper_link,
-        doi=doi,
+        poster_github=info.get("github_url", ""),
     )
 
     if not paper_link and github_url:
@@ -1077,7 +1013,7 @@ def _analyze_and_enrich(image_path, overrides):
         "paper_link":  paper_link,
         "github_link": github_url,
         "publication_year": _resolve_year(info.get("year", ""), paper_result, paper_link),
-        "conference":  (info.get("conference") or "").strip(),
+        "conference":  (paper_result or {}).get("conference") or (info.get("conference") or "").strip(),
         "notes": (
             f"Auto-extracted by AI. "
             f"Conference: {info.get('conference', 'N/A')}, "
