@@ -52,6 +52,9 @@
                     {% elif poster.publication_year %}
                         <div class="detail-authors year-only">{{ poster.publication_year }}</div>
                     {% endif %}
+                    {% if poster.institution %}
+                        <div class="detail-institution">{{ poster.institution }}</div>
+                    {% endif %}
 
                     <div class="detail-divider"></div>
 
@@ -59,8 +62,11 @@
                         <span class="category-badge category-{{ poster.category }}">{{ poster.get_category_display }}</span>
                     </div>
 
-                    {% if poster.subfields_display or tags_display %}
+                    {% if poster.conference or poster.subfields_display or tags_display %}
                         <div class="detail-tags-row max-sm:tw-gap-1 max-sm:tw-flex-wrap">
+                            {% if poster.conference %}
+                                <a href="{% url 'dashboard' %}?conference={{ poster.conference|urlencode }}" class="detail-tag-item conference-chip" title="Filter dashboard by {{ poster.conference }}">{{ poster.conference }}</a>
+                            {% endif %}
                             {% for sf in poster.subfields_display %}
                                 <span class="detail-tag-item subfield">{{ sf }}</span>
                             {% endfor %}

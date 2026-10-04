@@ -185,6 +185,7 @@ class ResearchPoster(models.Model):
     tags = models.CharField(max_length=200, blank=True, null=True)
     publication_year = models.PositiveSmallIntegerField(blank=True, null=True, db_index=True)
     conference = models.CharField(max_length=200, blank=True, default="", db_index=True)
+    institution = models.CharField(max_length=500, blank=True, default="")
     notes = models.TextField(max_length=500, blank=True, null=True)
 
     uploaded_by = models.ForeignKey(

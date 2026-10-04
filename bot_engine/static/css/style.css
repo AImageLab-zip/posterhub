@@ -594,14 +594,14 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .row-approved   { box-shadow: inset 4px 0 0 var(--approved); }
 .row-pending    { box-shadow: inset 4px 0 0 var(--pending); }
 .row-rejected   { box-shadow: inset 4px 0 0 var(--rejected); }
-.row-new        { background: #fffbeb !important; }
-.row-incomplete { background: #fff7ed !important; }
-[data-theme="dark"] .row-new        { background: #2a1f06 !important; }
-[data-theme="dark"] .row-incomplete { background: #241600 !important; }
+/* Approved = a reviewer accepted the poster without a paper, so no highlight */
+.row-incomplete:not(.row-approved) { background: #fff7ed !important; }
+[data-theme="dark"] .row-incomplete:not(.row-approved) { background: #241600 !important; }
 
 .incomplete-icon { display: inline-block; margin-left: 8px; font-size: 0.9em; }
 .incomplete-note { display: inline-block; margin: 6px 0 2px; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 0.78em; color: #9a3412; background: #ffedd5; border: 1px solid #fed7aa; font-weight: 600; }
 [data-theme="dark"] .incomplete-note { color: #fbbf24; background: #241600; border-color: #7c4a00; }
+.links-row .incomplete-note { margin: 0; text-align: center; }
 
 .update-time { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 0.76em; color: var(--text-faint); }
 .update-time::before { content: '\1F552'; font-size: 0.9em; }
@@ -633,6 +633,10 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .tag-pill { display: inline-block; padding: 3px 8px; background: var(--bg-surface); color: var(--text-muted); border-radius: var(--radius-pill); font-size: 0.75em; font-weight: 500; border: 1px solid var(--border); transition: all 0.15s ease; }
 .tag-pill:hover { border-color: var(--primary-muted); color: var(--primary); }
 .tag-pill-custom { background: var(--bg-surface); color: var(--text-muted); }
+.tag-pill-conference { font-family: inherit; line-height: inherit; cursor: pointer; background: var(--accent-muted); color: #0369a1; border-color: rgba(14, 165, 233, 0.35); font-weight: 600; }
+.tag-pill-conference:hover { border-color: var(--accent); color: var(--accent); }
+[data-theme="dark"] .tag-pill-conference { color: #7dd3fc; }
+.conference-chip-row { margin-bottom: 6px; }
 
 
 .subfield-dropdown-wrap { position: relative; display: inline-block; width: 100%; margin-top: 6px; }
@@ -675,7 +679,10 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .subfield-checkbox-label input[type="checkbox"] { accent-color: var(--primary); width: 14px; height: 14px; flex-shrink: 0; -webkit-appearance: checkbox; }
 
 
-.action-buttons { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.status-actions { display: flex; flex-direction: column; align-items: center; gap: 14px; }  /* = td top padding */
+/* Desktop: 2x2 grid (star·retry / edit·delete); mobile keeps them in one row */
+.action-buttons { display: grid; grid-template-columns: repeat(2, 40px); gap: 6px; justify-content: center; }
+@media (max-width: 1199.98px) { .action-buttons { display: flex; align-items: center; } }
 .action-btn { width: 40px; height: 40px; padding: 0; border: none; border-radius: var(--radius-md); background: rgba(255,255,255,0.7); color: var(--text-heading); font-size: 1.1em; text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.04); transition: all 0.2s ease; }
 [data-theme="dark"] .action-btn { background: rgba(30, 33, 40, 0.7); }
 .action-btn::before { display: none; }
@@ -870,7 +877,6 @@ body.upload-page .dark-toggle { bottom: 24px; }
 [data-theme="dark"] .analysis-status-processing { color: #60a5fa; background: rgba(59, 130, 246, 0.12); }
 
 
-.action-btn-retry { color: var(--pending); }
 .action-btn-stop  { color: var(--rejected); }
 
 
@@ -927,6 +933,13 @@ body.upload-page .dark-toggle { bottom: 24px; }
 .lightbox-close::before { display:none; }
 .lightbox-close::after { display:none; }
 @keyframes lbFadeIn { from{opacity:0} to{opacity:1} }
+/* Shown while the full-res poster downloads; delayed so cached images don't flash it */
+.lightbox-loading { display:none; position:absolute; flex-direction:column; align-items:center; gap:12px; padding:18px 26px; border-radius:12px; background:rgba(255,255,255,0.12); backdrop-filter:blur(8px); color:#fff; font-size:0.9em; font-weight:600; pointer-events:none; }
+.lightbox-overlay.lb-loading .lightbox-loading { display:flex; animation:lbFadeIn .2s ease .15s both; }
+.lightbox-overlay.lb-loading .lightbox-img { visibility:hidden; }
+.lightbox-spinner { width:32px; height:32px; border:3px solid rgba(255,255,255,0.25); border-top-color:#fff; border-radius:50%; animation:lbSpin .8s linear infinite; }
+.lightbox-overlay.lb-error .lightbox-spinner { display:none; }
+@keyframes lbSpin { to { transform:rotate(360deg); } }
 
 /* Tag autocomplete dropdown */
 .tag-ac-dropdown { display: none; position: absolute; left: 0; right: 0; z-index: 100; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: 0 4px 16px rgba(0,0,0,.12); max-height: 200px; overflow-y: auto; margin-top: 2px; }
@@ -1132,6 +1145,7 @@ body.upload-page .dark-toggle { bottom: 24px; }
     word-break: break-word;
 }
 .detail-title .new-badge { vertical-align: middle; margin-left: 0.4em; }
+.id-cell .new-badge { margin-left: 0; }
 
 .detail-authors {
     font-size: 0.88em;
@@ -1141,6 +1155,15 @@ body.upload-page .dark-toggle { bottom: 24px; }
 }
 .detail-authors .year-soft { opacity: 0.55; font-size: 0.88em; }
 .detail-authors.year-only  { opacity: 0.55; font-size: 0.88em; }
+.detail-authors:has(+ .detail-institution) { margin-bottom: 4px; }
+.detail-institution {
+    font-size: 0.82em;
+    font-style: italic;
+    color: var(--text-muted);
+    opacity: 0.85;
+    line-height: 1.5;
+    margin-bottom: 18px;
+}
 
 .detail-divider {
     height: 1px;
@@ -1246,6 +1269,15 @@ body.upload-page .dark-toggle { bottom: 24px; }
 [data-theme="dark"] .detail-tag-item.subfield {
     color: var(--text-label);
 }
+
+.detail-tag-item.conference-chip {
+    background: var(--accent-muted);
+    color: #0369a1;
+    border-color: rgba(14, 165, 233, 0.35);
+    text-decoration: none;
+}
+.detail-tag-item.conference-chip::before { content: ''; margin-right: 0; }
+[data-theme="dark"] .detail-tag-item.conference-chip { color: #7dd3fc; }
 
 #detailGroupsChips { display: contents; }
 

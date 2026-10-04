@@ -44,7 +44,7 @@ from .forms import PosterUploadForm, PosterEditForm
 from .models import (
     ResearchPoster, ActivityLog, Favorite,
     ResearchGroup, ResearchInterest, UserGroupMembership, PosterGroupWhyUseful,
-    BotAccount, PendingAssignmentDismissal,
+    BotAccount, PendingAssignmentDismissal, ProceedingsSource,
 )
 from .utils_ai import analyze_and_enrich, generate_why_useful
 from .tasks import process_poster_task, process_bot_poster_task, download_and_handle_media_task
@@ -866,9 +866,15 @@ def process_uploaded_poster(
             "subfields":   ("subfields", ""),
             "paper_link":  ("paper_link", ""),
             "github_link": ("github_link", ""),
-            "conference":  ("conference", ""),
         }.items():
             setattr(poster, field, enriched_data.get(key, default))
+
+        # Re-analysis keeps a conference/institution the user may have corrected;
+        # only a proceedings match, which is authoritative, replaces the conference.
+        if enriched_data.get("conference_from_proceedings") or not poster.conference:
+            poster.conference = enriched_data.get("conference", "")
+        if not poster.institution:
+            poster.institution = enriched_data.get("institution", "")
 
         if "paper_link" not in overrides:
             poster.ai_paper_link = enriched_data.get("paper_link", "")
@@ -896,10 +902,7 @@ def process_uploaded_poster(
                     combined.append(t)
         poster.tags = ", ".join(combined)
 
-        if user_notes and user_notes.strip():
-            poster.notes = user_notes.strip()
-        else:
-            poster.notes = enriched_data.get("notes", f"Auto-extracted via {source}")
+        poster.notes = (user_notes or "").strip()
 
         analysis_group = None
         if activity_user is not None:
@@ -929,7 +932,9 @@ def process_uploaded_poster(
         else:
             poster.why_useful = ""
 
-        poster.validation_status = "pending"
+        previous_status = poster.validation_status
+        auto_approved = enriched_data.get("proceedings_verified") and previous_status != "rejected"
+        poster.validation_status = "approved" if auto_approved else "pending"
         poster.analysis_status   = 'ok'
         poster.save()
 
@@ -952,6 +957,12 @@ def process_uploaded_poster(
                 "details": f"Uploaded via {source} + AI analysis",
             },
         )
+        if auto_approved and previous_status != "approved":
+            ActivityLog.objects.create(
+                user=None, poster=poster, action="status_changed",
+                poster_title=poster.title,
+                details=f"Status: {previous_status} → approved (auto: matched {poster.conference} proceedings)",
+            )
         return poster, enriched_data, None
 
     except Exception as e:
@@ -1387,7 +1398,8 @@ def _apply_filters(queryset, params, favorite_user=None):
         queryset = queryset.filter(
             Q(title__icontains=search) | Q(authors__icontains=search)
             | Q(summary__icontains=search) | Q(tags__icontains=search)
-            | Q(subfields__icontains=search)
+            | Q(subfields__icontains=search) | Q(conference__icontains=search)
+            | Q(institution__icontains=search)
         )
 
     text_filters = (
@@ -1810,7 +1822,7 @@ def dashboard(request):
     )
 
     for poster in page_obj:
-        poster.is_incomplete = not poster.paper_link or not poster.github_link
+        poster.is_incomplete = poster.analysis_status == "ok" and not poster.paper_link
         poster.is_favorite   = poster.id in favorite_ids
     _attach_why_useful_shown(request.user, page_obj.object_list)
 
@@ -2011,7 +2023,16 @@ def edit_poster(request, poster_id):
         "can_edit_groups": can_edit_groups,
         "groups_error": groups_error,
         "why_groups": why_groups,
+        "conference_suggestions": _conference_suggestions(request.user),
     })
+
+
+def _conference_suggestions(user):
+    """Known proceedings plus conferences already used on the caller's papers, for the Edit autocomplete."""
+    labels = [str(source) for source in ProceedingsSource.objects.filter(enabled=True)]
+    labels += accessible_posters(user).exclude(conference="").order_by().values_list("conference", flat=True).distinct()
+    unique = {label.strip().lower(): label.strip() for label in reversed(labels) if label.strip()}
+    return sorted(unique.values(), key=str.lower)
 
 
 def _why_useful_editor(poster, assigned_groups):
@@ -2384,7 +2405,7 @@ def dashboard_live_status(request):
 
 
 EXPORT_FIELDS = [
-    "ID", "Title", "Authors", "Year", "Category", "Tags",
+    "ID", "Title", "Authors", "Institution", "Conference", "Year", "Category", "Tags",
     "Paper Link", "GitHub Link", "Summary", "Why Useful",
     "Status", "Source", "Uploaded By", "Created At",
 ]
@@ -2405,6 +2426,7 @@ def _get_export_queryset(request):
 def _poster_to_row(poster):
     return [
         poster.id, poster.title, poster.authors,
+        poster.institution, poster.conference,
         poster.publication_year or "",
         poster.get_category_display(), poster.tags or "",
         poster.paper_link or "", poster.github_link or "",
@@ -2449,6 +2471,8 @@ def export_approved_json(request):
                 "id":            p.id,
                 "title":            p.title,
                 "authors":          p.authors,
+                "institution":      p.institution,
+                "conference":       p.conference,
                 "publication_year": p.publication_year,
                 "category":         p.get_category_display(),
                 "tags":          p.tags or "",

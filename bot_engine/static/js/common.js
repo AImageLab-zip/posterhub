@@ -32,10 +32,35 @@ function _lbReset() {
     if (img) { img.style.transform = ''; img.style.cursor = 'zoom-in'; }
 }
 
+function _lbLoader(lb) {
+    var el = lb.querySelector('.lightbox-loading');
+    if (!el) {
+        el = document.createElement('div');
+        el.className = 'lightbox-loading';
+        el.innerHTML = '<span class="lightbox-spinner"></span><span class="lightbox-loading-text"></span>';
+        lb.appendChild(el);
+    }
+    return el;
+}
+
 function openLightbox(src) {
     var lb = document.getElementById('lightbox');
     var img = document.getElementById('lightboxImg');
     if (!lb || !img) return;
+    var loader = _lbLoader(lb);
+    loader.querySelector('.lightbox-loading-text').textContent = 'Loading poster\u2026';
+    lb.classList.remove('lb-error');
+    lb.classList.add('lb-loading');
+    // Drop the previous poster so it doesn't flash while the new one downloads
+    img.removeAttribute('src');
+    img.onload = function () {
+        if (img.getAttribute('src') === src) lb.classList.remove('lb-loading');
+    };
+    img.onerror = function () {
+        if (img.getAttribute('src') !== src) return;
+        lb.classList.add('lb-error');
+        loader.querySelector('.lightbox-loading-text').textContent = 'Could not load the poster image';
+    };
     img.src = src;
     _lbReset();
     lb.classList.add('active');
@@ -46,7 +71,7 @@ function closeLightbox(e) {
     var lb = document.getElementById('lightbox');
     if (!lb) return;
     if (e && e.target !== lb && !e.target.classList.contains('lightbox-close')) return;
-    lb.classList.remove('active');
+    lb.classList.remove('active', 'lb-loading', 'lb-error');
     document.body.style.overflow = '';
     _lbReset();
 }

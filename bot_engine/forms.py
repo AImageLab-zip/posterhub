@@ -88,11 +88,16 @@ class PosterEditForm(forms.ModelForm):
     class Meta:
         model = ResearchPoster
         fields = [
-            "title", "authors", "paper_link", "github_link",
+            "title", "authors", "institution", "paper_link", "github_link",
             "summary", "why_useful", "category", "subfields", "tags",
-            "publication_year", "validation_status", "notes",
+            "conference", "publication_year", "validation_status", "notes",
         ]
         widgets = {
+            "institution": forms.TextInput(attrs={"maxlength": "500", "placeholder": "e.g. University of Modena and Reggio Emilia"}),
+            "conference": forms.TextInput(attrs={
+                "maxlength": "200", "list": "conferenceOptions", "autocomplete": "off",
+                "placeholder": "e.g. MICCAI 2026",
+            }),
             "summary": forms.Textarea(attrs={"rows": 4}),
             "why_useful": forms.Textarea(attrs={"rows": 3}),
             "notes": forms.Textarea(attrs={"rows": 4, "maxlength": "500"}),

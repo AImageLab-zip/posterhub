@@ -9,8 +9,8 @@ from django.urls import reverse
 
 from .access import GROUP_MANAGER_ROLE
 from .models import (
-    ActivityLog, PendingAssignmentDismissal, PosterGroupWhyUseful, ResearchGroup, ResearchInterest,
-    ResearchPoster, UserGroupMembership,
+    ActivityLog, PendingAssignmentDismissal, PosterGroupWhyUseful, ProceedingsSource, ResearchGroup,
+    ResearchInterest, ResearchPoster, UserGroupMembership,
 )
 
 
@@ -958,3 +958,61 @@ class BotAdminContactTests(TestCase):
     def test_contact_is_omitted_when_not_configured(self):
         with override_settings(ADMIN_CONTACT_EMAIL=""):
             self.assertNotIn("Contact", self.linking_reply("telegram", "nobody@example.org"))
+
+
+@override_settings(
+    SHIBBOLETH_AUTH=False,
+    SECURE_SSL_REDIRECT=False,
+    ALLOWED_HOSTS=["testserver"],
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class ConferenceInstitutionTests(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.member = get_user_model().objects.create_user(username="conf_member")
+        group = ResearchGroup.objects.create(name="Imaging")
+        UserGroupMembership.objects.create(user=cls.member, group=group, is_primary=True)
+        cls.poster = ResearchPoster.objects.create(
+            title="Conference paper", authors="An Author", summary="A summary.",
+            conference="MICCAI 2023", institution="Old Institute",
+        )
+        cls.poster.groups.add(group)
+        ProceedingsSource.objects.create(conference="CVPR", year=2026, url="https://example.org/cvpr",
+                                         parser="cvf_html")
+
+    def setUp(self):
+        self.client.force_login(self.member, backend="django.contrib.auth.backends.ModelBackend")
+
+    def test_edit_page_offers_known_conferences_and_saves_both_fields(self):
+        url = reverse("edit_poster", args=[self.poster.pk])
+        response = self.client.get(url)
+        self.assertContains(response, 'list="conferenceOptions"')
+        self.assertContains(response, '<option value="CVPR 2026">')
+        self.assertContains(response, '<option value="MICCAI 2023">')
+        self.client.post(url, {
+            "title": self.poster.title, "authors": "An Author", "summary": "A summary.",
+            "category": "other", "validation_status": "pending",
+            "conference": " MICCAI 2026 ", "institution": "University of Modena and Reggio Emilia",
+        })
+        self.poster.refresh_from_db()
+        self.assertEqual((self.poster.conference, self.poster.institution),
+                         ("MICCAI 2026", "University of Modena and Reggio Emilia"))
+
+    def test_conference_is_a_chip_everywhere_and_institution_only_on_the_paper_page(self):
+        detail = self.client.get(reverse("poster_detail", args=[self.poster.pk]))
+        self.assertContains(detail, 'class="detail-tag-item conference-chip"')
+        self.assertContains(detail, '<div class="detail-institution">Old Institute</div>', html=True)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, 'data-conf="MICCAI 2023"')
+        self.assertNotContains(dashboard, "Old Institute")
+
+    def test_dashboard_search_matches_conference_and_institution(self):
+        for term in ("miccai 2023", "old institute"):
+            with self.subTest(term=term):
+                response = self.client.get(reverse("dashboard"), {"search": term})
+                self.assertContains(response, "Conference paper")
