@@ -594,14 +594,14 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .row-approved   { box-shadow: inset 4px 0 0 var(--approved); }
 .row-pending    { box-shadow: inset 4px 0 0 var(--pending); }
 .row-rejected   { box-shadow: inset 4px 0 0 var(--rejected); }
-.row-new        { background: #fffbeb !important; }
-.row-incomplete { background: #fff7ed !important; }
-[data-theme="dark"] .row-new        { background: #2a1f06 !important; }
-[data-theme="dark"] .row-incomplete { background: #241600 !important; }
+/* Approved = a reviewer accepted the poster without a paper, so no highlight */
+.row-incomplete:not(.row-approved) { background: #fff7ed !important; }
+[data-theme="dark"] .row-incomplete:not(.row-approved) { background: #241600 !important; }
 
 .incomplete-icon { display: inline-block; margin-left: 8px; font-size: 0.9em; }
 .incomplete-note { display: inline-block; margin: 6px 0 2px; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 0.78em; color: #9a3412; background: #ffedd5; border: 1px solid #fed7aa; font-weight: 600; }
 [data-theme="dark"] .incomplete-note { color: #fbbf24; background: #241600; border-color: #7c4a00; }
+.links-row .incomplete-note { margin: 0; text-align: center; }
 
 .update-time { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 0.76em; color: var(--text-faint); }
 .update-time::before { content: '\1F552'; font-size: 0.9em; }
@@ -1132,6 +1132,7 @@ body.upload-page .dark-toggle { bottom: 24px; }
     word-break: break-word;
 }
 .detail-title .new-badge { vertical-align: middle; margin-left: 0.4em; }
+.id-cell .new-badge { margin-left: 0; }
 
 .detail-authors {
     font-size: 0.88em;

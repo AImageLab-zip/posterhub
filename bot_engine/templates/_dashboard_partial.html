@@ -28,7 +28,7 @@
     </thead>
     <tbody class="max-xl:tw-block max-xl:tw-w-full">
         {% for poster in posters %}
-        <tr class="row-{{ poster.validation_status }}{% if poster.is_new %} row-new{% endif %}{% if poster.is_incomplete %} row-incomplete{% endif %}{% if poster.analysis_status == 'failed' %} row-analysis-failed{% elif poster.analysis_status == 'processing' %} row-analysis-processing{% endif %} max-xl:tw-block max-xl:tw-w-full max-xl:tw-relative max-xl:tw-overflow-hidden max-xl:tw-mb-2.5 max-xl:tw-p-[14px_16px] max-xl:tw-bg-[var(--bg-card)] max-xl:tw-rounded-xl max-xl:tw-shadow-[0_1px_4px_rgba(0,0,0,0.08)] max-xl:tw-border max-xl:tw-border-solid max-xl:tw-border-[var(--border-card)]"
+        <tr class="row-{{ poster.validation_status }}{% if poster.is_incomplete %} row-incomplete{% endif %}{% if poster.analysis_status == 'failed' %} row-analysis-failed{% elif poster.analysis_status == 'processing' %} row-analysis-processing{% endif %} max-xl:tw-block max-xl:tw-w-full max-xl:tw-relative max-xl:tw-overflow-hidden max-xl:tw-mb-2.5 max-xl:tw-p-[14px_16px] max-xl:tw-bg-[var(--bg-card)] max-xl:tw-rounded-xl max-xl:tw-shadow-[0_1px_4px_rgba(0,0,0,0.08)] max-xl:tw-border max-xl:tw-border-solid max-xl:tw-border-[var(--border-card)]"
             data-poster-id="{{ poster.id }}"
             data-analysis-status="{{ poster.analysis_status }}">
 
@@ -40,8 +40,8 @@
                 <div class="id-cell">
                     <div class="id-cell-top">
                         <span class="id-badge max-xl:tw-text-[0.78em] max-xl:tw-py-[3px] max-xl:tw-px-2 max-xl:tw-rounded-md max-xl:tw-min-w-0">{{ poster.id }}</span>
-                        {% if poster.is_new %}<span class="new-badge max-xl:tw-text-[0.68em] max-xl:tw-ml-0 max-xl:tw-py-[3px] max-xl:tw-px-2">NEW</span>{% endif %}
                     </div>
+                    {% if poster.is_new %}<span class="new-badge max-xl:tw-text-[0.68em] max-xl:tw-py-[3px] max-xl:tw-px-2">NEW</span>{% endif %}
                     {% if poster.is_favorite %}
                     <div class="id-cell-indicators">
                         <svg class="id-cell-icon icon-star" viewBox="0 0 1024 1024" fill="currentColor" title="Starred">
@@ -66,16 +66,6 @@
                         <span class="analysis-status-badge analysis-status-processing">&#9203; Analyzing&hellip;</span>
                     {% endif %}
                 </div>
-                {% if poster.is_incomplete and poster.analysis_status == 'ok' %}
-                    <div class="incomplete-note max-xl:tw-text-[0.72em] max-xl:tw-mt-0.5 max-xl:tw-mb-1 max-xl:tw-py-0.5 max-xl:tw-px-2 max-xl:tw-inline-flex max-xl:tw-items-center max-xl:tw-gap-1">
-                        <svg class="btn-icon icon-warn max-xl:tw-w-3 max-xl:tw-h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                            <line x1="12" y1="9" x2="12" y2="13"/>
-                            <line x1="12" y1="17" x2="12.01" y2="17"/>
-                        </svg>
-                        <span class="incomplete-label"><span class="max-xl:tw-hidden">Incomplete<br>metadata</span><span class="tw-hidden max-xl:tw-inline">Incomplete metadata</span></span>
-                    </div>
-                {% endif %}
                 <div class="article-authors max-xl:tw-text-[0.82em] max-xl:tw-leading-[1.3] max-xl:tw-text-[var(--text-muted)] max-xl:tw-line-clamp-1">{{ poster.authors }}</div>
                 <div class="update-time max-xl:tw-hidden">Updated: {{ poster.updated_at|timesince }} ago</div>
             </td>
@@ -101,13 +91,19 @@
                     <div class="links-row">
                         {% if poster.paper_link %}
                             <a href="{{ poster.paper_link }}" class="link-button max-xl:tw-text-[0.78em] max-xl:tw-py-[4px] max-xl:tw-px-3 max-xl:tw-rounded-md" target="_blank">Paper</a>
-                        {% else %}
-                            <span class="text-muted max-xl:tw-text-[0.78em]">Paper: N/A</span>
-                        {% endif %}
-                        {% if poster.github_link %}
-                            <a href="{{ poster.github_link }}" class="link-button max-xl:tw-text-[0.78em] max-xl:tw-py-[4px] max-xl:tw-px-3 max-xl:tw-rounded-md" target="_blank">GitHub</a>
-                        {% else %}
-                            <span class="text-muted max-xl:tw-text-[0.78em]">GitHub: N/A</span>
+                            {% if poster.github_link %}
+                                <a href="{{ poster.github_link }}" class="link-button max-xl:tw-text-[0.78em] max-xl:tw-py-[4px] max-xl:tw-px-3 max-xl:tw-rounded-md" target="_blank">GitHub</a>
+                            {% endif %}
+                        {% elif poster.is_incomplete %}
+                            {# No paper found: GitHub alone isn't shown, the warning takes its place #}
+                            <div class="incomplete-note max-xl:tw-text-[0.72em] max-xl:tw-mt-0.5 max-xl:tw-mb-1 max-xl:tw-py-0.5 max-xl:tw-px-2 max-xl:tw-inline-flex max-xl:tw-items-center max-xl:tw-gap-1">
+                                <svg class="btn-icon icon-warn max-xl:tw-w-3 max-xl:tw-h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                                    <line x1="12" y1="9" x2="12" y2="13"/>
+                                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                                </svg>
+                                <span class="incomplete-label"><span class="max-xl:tw-hidden">Incomplete<br>metadata</span><span class="tw-hidden max-xl:tw-inline">Incomplete metadata</span></span>
+                            </div>
                         {% endif %}
                     </div>
                     {% if poster.image %}

@@ -1810,7 +1810,7 @@ def dashboard(request):
     )
 
     for poster in page_obj:
-        poster.is_incomplete = not poster.paper_link or not poster.github_link
+        poster.is_incomplete = poster.analysis_status == "ok" and not poster.paper_link
         poster.is_favorite   = poster.id in favorite_ids
     _attach_why_useful_shown(request.user, page_obj.object_list)
 
