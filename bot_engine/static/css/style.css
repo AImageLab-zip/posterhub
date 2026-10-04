@@ -675,7 +675,10 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .subfield-checkbox-label input[type="checkbox"] { accent-color: var(--primary); width: 14px; height: 14px; flex-shrink: 0; -webkit-appearance: checkbox; }
 
 
-.action-buttons { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.status-actions { display: flex; flex-direction: column; align-items: center; gap: 14px; }  /* = td top padding */
+/* Desktop: 2x2 grid (star·retry / edit·delete); mobile keeps them in one row */
+.action-buttons { display: grid; grid-template-columns: repeat(2, 40px); gap: 6px; justify-content: center; }
+@media (max-width: 1199.98px) { .action-buttons { display: flex; align-items: center; } }
 .action-btn { width: 40px; height: 40px; padding: 0; border: none; border-radius: var(--radius-md); background: rgba(255,255,255,0.7); color: var(--text-heading); font-size: 1.1em; text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.04); transition: all 0.2s ease; }
 [data-theme="dark"] .action-btn { background: rgba(30, 33, 40, 0.7); }
 .action-btn::before { display: none; }
@@ -870,7 +873,6 @@ body.upload-page .dark-toggle { bottom: 24px; }
 [data-theme="dark"] .analysis-status-processing { color: #60a5fa; background: rgba(59, 130, 246, 0.12); }
 
 
-.action-btn-retry { color: var(--pending); }
 .action-btn-stop  { color: var(--rejected); }
 
 

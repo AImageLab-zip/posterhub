@@ -20,10 +20,9 @@
             <th style="width: 160px; text-align: center;">Links &amp; Poster</th>
             <th>Summary</th>
             <th>Why Useful</th>
-            <th style="width: 100px;" class="sortable-th" data-sort="status" onclick="sortColumn('status')">
+            <th style="width: 110px; text-align: center;" class="sortable-th" data-sort="status" onclick="sortColumn('status')">
                 Status <span class="sort-arrow {% if sort_by == 'status' %}active{% endif %}">{% if sort_by == 'status' %}{% if sort_order == 'asc' %}▲{% else %}▼{% endif %}{% else %}⇅{% endif %}</span>
             </th>
-            <th style="width: 70px; text-align: center;">Actions</th>
         </tr>
     </thead>
     <tbody class="max-xl:tw-block max-xl:tw-w-full">
@@ -174,49 +173,52 @@
               {% endif %}
             </td>
 
-            {# ── TD8+TD9: Status + Actions — inline with TD5 links on mobile ── #}
-            <td class="max-xl:!tw-inline-flex max-xl:!tw-items-center max-xl:!tw-my-1 max-xl:!tw-mr-2 max-xl:!tw-p-0 max-xl:!tw-border-b-0 max-xl:!tw-w-auto max-xl:!tw-align-middle">
-                <form method="post" action="{% url 'update_status' poster.id %}" class="status-form" data-poster-id="{{ poster.id }}">
-                    {% csrf_token %}
-                    <select name="status" class="status-select status-{{ poster.validation_status }}" onchange="updateStatus(this)">
-                        <option value="pending"  {% if poster.validation_status == 'pending'  %}selected{% endif %}>&#9679; Pending</option>
-                        <option value="approved" {% if poster.validation_status == 'approved' %}selected{% endif %}>&#9679; Approved</option>
-                        <option value="rejected" {% if poster.validation_status == 'rejected' %}selected{% endif %}>&#9679; Rejected</option>
-                    </select>
-                </form>
-                <span class="status-mob-badge status-{{ poster.validation_status }}">&#9679; {{ poster.validation_status|capfirst }}</span>
-            </td>
-
-            <td class="max-xl:!tw-inline-flex max-xl:!tw-items-center max-xl:!tw-gap-1 max-xl:!tw-my-1 max-xl:!tw-w-auto max-xl:!tw-p-0 max-xl:!tw-border-b-0 max-xl:!tw-align-middle">
-                <div class="action-buttons max-xl:!tw-flex-row max-xl:!tw-flex-nowrap max-xl:!tw-gap-1 max-xl:!tw-justify-start">
-                    <button class="action-btn favorite-btn max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)] {% if poster.is_favorite %}favorited{% endif %}"
-                            onclick="toggleFavorite({{ poster.id }}, this)"
-                            title="{% if poster.is_favorite %}Remove from favorites{% else %}Add to favorites{% endif %}"
-                            {% if poster.analysis_status == 'processing' %}disabled{% endif %}>
-                        {% if poster.is_favorite %}
-                            <svg class="btn-icon icon-star" viewBox="0 0 1024 1024" fill="currentColor">
-                                <path d="M908.1 353.1l-253.9-36.9L540.7 86.1c-3.1-6.3-8.2-11.4-14.5-14.5-15.8-7.8-35-1.3-42.9 14.5L369.8 316.2l-253.9 36.9c-7 1-13.4 4.3-18.3 9.3a32.05 32.05 0 0 0 .6 45.3l183.7 179.1-43.4 252.9a31.95 31.95 0 0 0 46.4 33.7L512 754l227.1 119.4c6.2 3.3 13.4 4.4 20.3 3.2 17.4-3 29.1-19.5 26.1-36.9l-43.4-252.9 183.7-179.1c5-4.9 8.3-11.3 9.3-18.3 2.7-17.5-9.5-33.7-27-36.3z"/>
-                            </svg>
-                        {% else %}
-                            <svg class="btn-icon icon-star-empty" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M11.2691 4.41115C11.5006 3.89177 11.6164 3.63208 11.7776 3.55211C11.9176 3.48263 12.082 3.48263 12.222 3.55211C12.3832 3.63208 12.499 3.89177 12.7305 4.41115L14.5745 8.54808C14.643 8.70162 14.6772 8.77839 14.7302 8.83718C14.777 8.8892 14.8343 8.93081 14.8982 8.95929C14.9705 8.99149 15.0541 9.00031 15.2213 9.01795L19.7256 9.49336C20.2911 9.55304 20.5738 9.58288 20.6997 9.71147C20.809 9.82316 20.8598 9.97956 20.837 10.1342C20.8108 10.3122 20.5996 10.5025 20.1772 10.8832L16.8125 13.9154C16.6877 14.0279 16.6252 14.0842 16.5857 14.1527C16.5507 14.2134 16.5288 14.2807 16.5215 14.3503C16.5132 14.429 16.5306 14.5112 16.5655 14.6757L17.5053 19.1064C17.6233 19.6627 17.6823 19.9408 17.5989 20.1002C17.5264 20.2388 17.3934 20.3354 17.2393 20.3615C17.0619 20.3915 16.8156 20.2495 16.323 19.9654L12.3995 17.7024C12.2539 17.6184 12.1811 17.5765 12.1037 17.56C12.0352 17.5455 11.9644 17.5455 11.8959 17.56C11.8185 17.5765 11.7457 17.6184 11.6001 17.7024L7.67662 19.9654C7.18404 20.2495 6.93775 20.3915 6.76034 20.3615C6.60623 20.3354 6.47319 20.2388 6.40075 20.1002C6.31736 19.9408 6.37635 19.6627 6.49434 19.1064L7.4341 14.6757C7.46898 14.5112 7.48642 14.429 7.47814 14.3503C7.47081 14.2807 7.44894 14.2134 7.41394 14.1527C7.37439 14.0842 7.31195 14.0279 7.18708 13.9154L3.82246 10.8832C3.40005 10.5025 3.18884 10.3122 3.16258 10.1342C3.13978 9.97956 3.19059 9.82316 3.29993 9.71147C3.42581 9.58288 3.70856 9.55304 4.27406 9.49336L8.77835 9.01795C8.94553 9.00031 9.02911 8.99149 9.10139 8.95929C9.16534 8.93081 9.2226 8.8892 9.26946 8.83718C9.32241 8.77839 9.35663 8.70162 9.42508 8.54808L11.2691 4.41115Z"/>
-                            </svg>
-                        {% endif %}
-                    </button>
-                    {% if poster.analysis_status == 'processing' %}
-                        <button class="action-btn action-btn-stop max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)]" onclick="stopAnalysis({{ poster.id }}, this)" title="Stop analysis">
-                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                            </svg>
+            {# ── TD8: Status + Actions — status above a 2×2 grid (star·delete / edit·retry); inline row on mobile ── #}
+            <td class="max-xl:!tw-inline-flex max-xl:!tw-items-center max-xl:!tw-my-1 max-xl:!tw-p-0 max-xl:!tw-border-b-0 max-xl:!tw-w-auto max-xl:!tw-align-middle">
+                <div class="status-actions max-xl:!tw-flex-row max-xl:!tw-flex-wrap max-xl:!tw-items-center max-xl:!tw-gap-x-2 max-xl:!tw-gap-y-1.5">
+                    <form method="post" action="{% url 'update_status' poster.id %}" class="status-form" data-poster-id="{{ poster.id }}">
+                        {% csrf_token %}
+                        <select name="status" class="status-select status-{{ poster.validation_status }}" onchange="updateStatus(this)">
+                            <option value="pending"  {% if poster.validation_status == 'pending'  %}selected{% endif %}>&#9679; Pending</option>
+                            <option value="approved" {% if poster.validation_status == 'approved' %}selected{% endif %}>&#9679; Approved</option>
+                            <option value="rejected" {% if poster.validation_status == 'rejected' %}selected{% endif %}>&#9679; Rejected</option>
+                        </select>
+                    </form>
+                    <span class="status-mob-badge status-{{ poster.validation_status }}">&#9679; {{ poster.validation_status|capfirst }}</span>
+                    <div class="action-buttons max-xl:!tw-flex-row max-xl:!tw-flex-nowrap max-xl:!tw-gap-1 max-xl:!tw-justify-start">
+                        <button class="action-btn favorite-btn max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)] {% if poster.is_favorite %}favorited{% endif %}"
+                                onclick="toggleFavorite({{ poster.id }}, this)"
+                                title="{% if poster.is_favorite %}Remove from favorites{% else %}Add to favorites{% endif %}"
+                                {% if poster.analysis_status == 'processing' %}disabled{% endif %}>
+                            {% if poster.is_favorite %}
+                                <svg class="btn-icon icon-star" viewBox="0 0 1024 1024" fill="currentColor">
+                                    <path d="M908.1 353.1l-253.9-36.9L540.7 86.1c-3.1-6.3-8.2-11.4-14.5-14.5-15.8-7.8-35-1.3-42.9 14.5L369.8 316.2l-253.9 36.9c-7 1-13.4 4.3-18.3 9.3a32.05 32.05 0 0 0 .6 45.3l183.7 179.1-43.4 252.9a31.95 31.95 0 0 0 46.4 33.7L512 754l227.1 119.4c6.2 3.3 13.4 4.4 20.3 3.2 17.4-3 29.1-19.5 26.1-36.9l-43.4-252.9 183.7-179.1c5-4.9 8.3-11.3 9.3-18.3 2.7-17.5-9.5-33.7-27-36.3z"/>
+                                </svg>
+                            {% else %}
+                                <svg class="btn-icon icon-star-empty" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M11.2691 4.41115C11.5006 3.89177 11.6164 3.63208 11.7776 3.55211C11.9176 3.48263 12.082 3.48263 12.222 3.55211C12.3832 3.63208 12.499 3.89177 12.7305 4.41115L14.5745 8.54808C14.643 8.70162 14.6772 8.77839 14.7302 8.83718C14.777 8.8892 14.8343 8.93081 14.8982 8.95929C14.9705 8.99149 15.0541 9.00031 15.2213 9.01795L19.7256 9.49336C20.2911 9.55304 20.5738 9.58288 20.6997 9.71147C20.809 9.82316 20.8598 9.97956 20.837 10.1342C20.8108 10.3122 20.5996 10.5025 20.1772 10.8832L16.8125 13.9154C16.6877 14.0279 16.6252 14.0842 16.5857 14.1527C16.5507 14.2134 16.5288 14.2807 16.5215 14.3503C16.5132 14.429 16.5306 14.5112 16.5655 14.6757L17.5053 19.1064C17.6233 19.6627 17.6823 19.9408 17.5989 20.1002C17.5264 20.2388 17.3934 20.3354 17.2393 20.3615C17.0619 20.3915 16.8156 20.2495 16.323 19.9654L12.3995 17.7024C12.2539 17.6184 12.1811 17.5765 12.1037 17.56C12.0352 17.5455 11.9644 17.5455 11.8959 17.56C11.8185 17.5765 11.7457 17.6184 11.6001 17.7024L7.67662 19.9654C7.18404 20.2495 6.93775 20.3915 6.76034 20.3615C6.60623 20.3354 6.47319 20.2388 6.40075 20.1002C6.31736 19.9408 6.37635 19.6627 6.49434 19.1064L7.4341 14.6757C7.46898 14.5112 7.48642 14.429 7.47814 14.3503C7.47081 14.2807 7.44894 14.2134 7.41394 14.1527C7.37439 14.0842 7.31195 14.0279 7.18708 13.9154L3.82246 10.8832C3.40005 10.5025 3.18884 10.3122 3.16258 10.1342C3.13978 9.97956 3.19059 9.82316 3.29993 9.71147C3.42581 9.58288 3.70856 9.55304 4.27406 9.49336L8.77835 9.01795C8.94553 9.00031 9.02911 8.99149 9.10139 8.95929C9.16534 8.93081 9.2226 8.8892 9.26946 8.83718C9.32241 8.77839 9.35663 8.70162 9.42508 8.54808L11.2691 4.41115Z"/>
+                                </svg>
+                            {% endif %}
                         </button>
-                    {% else %}
-                        <a href="{% url 'edit_poster' poster.id %}" onclick="this.href=this.href.split('?')[0]+'?next='+encodeURIComponent(location.pathname+location.search)" class="action-btn max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)]" title="Edit">
-                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
-                        </a>
-                        {% if poster.analysis_status != 'processing' %}
+                        {% if poster.analysis_status == 'processing' %}
+                            <button class="action-btn action-btn-stop max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)]" onclick="stopAnalysis({{ poster.id }}, this)" title="Stop analysis">
+                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                </svg>
+                            </button>
+                        {% else %}
+                            <button class="action-btn delete-btn max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)]" onclick="confirmDelete({{ poster.id }}, '{{ poster.title|escapejs }}')" title="Delete">
+                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                                </svg>
+                            </button>
+                            <a href="{% url 'edit_poster' poster.id %}" onclick="this.href=this.href.split('?')[0]+'?next='+encodeURIComponent(location.pathname+location.search)" class="action-btn max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)]" title="Edit">
+                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                            </a>
                             <button class="action-btn action-btn-retry max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)]" onclick="retryAnalysis({{ poster.id }}, this)" title="Retry AI analysis">
                                 <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                     <polyline points="1 4 1 10 7 10"/>
@@ -224,13 +226,7 @@
                                 </svg>
                             </button>
                         {% endif %}
-                        <button class="action-btn delete-btn max-xl:!tw-w-[28px] max-xl:!tw-h-[28px] max-xl:!tw-text-[0.8em] max-xl:!tw-rounded-md max-xl:!tw-shrink-0 max-xl:!tw-bg-transparent max-xl:!tw-shadow-none max-xl:!tw-border max-xl:!tw-border-solid max-xl:!tw-border-[var(--border)]" onclick="confirmDelete({{ poster.id }}, '{{ poster.title|escapejs }}')" title="Delete">
-                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="3 6 5 6 21 6"/>
-                                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                            </svg>
-                        </button>
-                    {% endif %}
+                    </div>
                 </div>
             </td>
 
