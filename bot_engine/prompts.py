@@ -8,10 +8,10 @@ Return ONLY valid JSON (no markdown) with these fields:
     "title": "Complete paper title",
     "authors": "All authors in 'First Last' format, separated by comma and space (e.g. 'Lorenzo Baraldi, Rita Cucchiara')",
     "subfields": ["slug1", "slug2"],
-    "conference": "Conference/venue if visible",
+    "conference": "Conference/venue if visible, else empty string",
     "year": "Publication year if visible",
     "arxiv_id": "arXiv identifier or arxiv.org paper URL only if explicitly visible",
-    "institution": "University/institution if visible",
+    "institution": "University/institution if visible, else empty string",
     "search_query": "Search query to find paper online (title + first author)",
     "github_url": "GitHub repository URL exactly as printed on the image, or empty string if none is printed (never guess)"
 }

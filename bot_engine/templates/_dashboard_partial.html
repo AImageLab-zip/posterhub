@@ -71,6 +71,9 @@
 
             {# ── TD4: Category + tags ── #}
             <td class="max-xl:tw-block max-xl:tw-mb-2 max-xl:tw-p-0 max-xl:tw-border-b-0 max-xl:tw-text-[0.88em] max-xl:tw-leading-[1.4]">
+                {% if poster.conference %}
+                    <div class="conference-chip-row"><button type="button" class="tag-pill tag-pill-conference max-xl:tw-text-[0.72em] max-xl:tw-py-[3px] max-xl:tw-px-2" data-conf="{{ poster.conference }}" onclick="toggleConference(this.dataset.conf)" title="Filter by {{ poster.conference }}">{{ poster.conference }}</button></div>
+                {% endif %}
                 <span class="category-badge category-{{ poster.category }} max-xl:tw-text-[0.78em] max-xl:tw-py-[4px] max-xl:tw-px-2.5 max-xl:tw-rounded-md max-xl:tw-mb-1">{{ poster.get_category_display }}</span>
                 {% if poster.subfields_display %}
                     <div class="tags-container max-xl:!tw-flex max-xl:tw-flex-wrap max-xl:tw-gap-1.5 max-xl:tw-mt-1.5" style="margin-top: 6px;">

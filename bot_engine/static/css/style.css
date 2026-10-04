@@ -633,6 +633,10 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .tag-pill { display: inline-block; padding: 3px 8px; background: var(--bg-surface); color: var(--text-muted); border-radius: var(--radius-pill); font-size: 0.75em; font-weight: 500; border: 1px solid var(--border); transition: all 0.15s ease; }
 .tag-pill:hover { border-color: var(--primary-muted); color: var(--primary); }
 .tag-pill-custom { background: var(--bg-surface); color: var(--text-muted); }
+.tag-pill-conference { font-family: inherit; line-height: inherit; cursor: pointer; background: var(--accent-muted); color: #0369a1; border-color: rgba(14, 165, 233, 0.35); font-weight: 600; }
+.tag-pill-conference:hover { border-color: var(--accent); color: var(--accent); }
+[data-theme="dark"] .tag-pill-conference { color: #7dd3fc; }
+.conference-chip-row { margin-bottom: 6px; }
 
 
 .subfield-dropdown-wrap { position: relative; display: inline-block; width: 100%; margin-top: 6px; }
@@ -1151,6 +1155,15 @@ body.upload-page .dark-toggle { bottom: 24px; }
 }
 .detail-authors .year-soft { opacity: 0.55; font-size: 0.88em; }
 .detail-authors.year-only  { opacity: 0.55; font-size: 0.88em; }
+.detail-authors:has(+ .detail-institution) { margin-bottom: 4px; }
+.detail-institution {
+    font-size: 0.82em;
+    font-style: italic;
+    color: var(--text-muted);
+    opacity: 0.85;
+    line-height: 1.5;
+    margin-bottom: 18px;
+}
 
 .detail-divider {
     height: 1px;
@@ -1256,6 +1269,15 @@ body.upload-page .dark-toggle { bottom: 24px; }
 [data-theme="dark"] .detail-tag-item.subfield {
     color: var(--text-label);
 }
+
+.detail-tag-item.conference-chip {
+    background: var(--accent-muted);
+    color: #0369a1;
+    border-color: rgba(14, 165, 233, 0.35);
+    text-decoration: none;
+}
+.detail-tag-item.conference-chip::before { content: ''; margin-right: 0; }
+[data-theme="dark"] .detail-tag-item.conference-chip { color: #7dd3fc; }
 
 #detailGroupsChips { display: contents; }
 

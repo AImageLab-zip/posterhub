@@ -288,6 +288,13 @@ class EnrichmentTests(SimpleTestCase):
         self.lookup.assert_not_called()
         self.github.assert_not_called()
 
+    def test_conference_and_institution_are_fields_not_notes(self):
+        self.info.update(conference=' MICCAI  2026 ', institution='N/A')
+        result = ai.analyze_and_enrich('unused')
+        self.assertEqual((result['conference'], result['institution']), ('MICCAI 2026', ''))
+        self.assertFalse(result['conference_from_proceedings'])
+        self.assertNotIn('notes', result)
+
     def test_provider_failure_keeps_poster_analysis_available(self):
         result = ai.analyze_and_enrich('unused')
         self.assertEqual(result['title'], SKIN)
@@ -463,6 +470,28 @@ class PaperPersistenceTests(TestCase):
         self.assertEqual(self.reanalyse(verified=True, status='approved'), [])
         self.assertEqual(self.poster.validation_status, 'approved')
 
+    def enrich_existing(self, **enriched):
+        from .views import process_uploaded_poster
+        with patch('bot_engine.views.analyze_and_enrich', return_value={
+            'is_research_poster': True, 'title': SKIN, 'summary': 'Summary', **enriched,
+        }):
+            _, _, error = process_uploaded_poster(None, None, existing_poster=self.poster)
+        self.assertIsNone(error)
+        self.poster.refresh_from_db()
+
+    def test_reanalysis_keeps_corrected_conference_and_institution(self):
+        self.poster.conference, self.poster.institution = 'MICCAI 2026', 'Corrected Institute'
+        self.poster.save()
+        self.enrich_existing(conference='MICCAI 2023', institution='Misread Institute')
+        self.assertEqual((self.poster.conference, self.poster.institution), ('MICCAI 2026', 'Corrected Institute'))
+        self.enrich_existing(conference='CVPR 2026', conference_from_proceedings=True, institution='Other')
+        self.assertEqual((self.poster.conference, self.poster.institution), ('CVPR 2026', 'Corrected Institute'))
+
+    def test_empty_fields_are_filled_and_notes_are_never_generated(self):
+        self.enrich_existing(conference='ISBI 2026', institution='UNIMORE')
+        self.assertEqual((self.poster.conference, self.poster.institution), ('ISBI 2026', 'UNIMORE'))
+        self.assertEqual(self.poster.notes, '')
+
     def test_repair_previews_then_saves_only_missing_links(self):
         self.poster.paper_link = ''
         self.poster.ai_paper_link = ''
@@ -487,3 +516,16 @@ class PaperPersistenceTests(TestCase):
             self.poster.save()
             call_command('repair_paper_links', str(self.poster.pk), apply=True, stdout=io.StringIO())
         lookup.assert_not_called()
+
+
+class NotesMigrationTests(SimpleTestCase):
+    def test_generated_notes_are_split_into_fields(self):
+        from importlib import import_module
+        parse = import_module('bot_engine.migrations.0033_move_conference_institution_out_of_notes').parse_auto_notes
+        self.assertEqual(
+            parse('Auto-extracted by AI. Conference: MICCAI 2026, Institution: Korea University, Yale School of Medicine'),
+            {'conference': 'MICCAI 2026', 'institution': 'Korea University, Yale School of Medicine'},
+        )
+        self.assertEqual(parse('Auto-extracted by AI. Conference: , Institution: N/A'),
+                         {'conference': '', 'institution': ''})
+        self.assertIsNone(parse('from miccai 2025'))

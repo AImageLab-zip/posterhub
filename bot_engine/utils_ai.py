@@ -898,6 +898,14 @@ def _resolve_year(ai_year, paper_result, paper_link):
     return ""
 
 
+NOT_VISIBLE = {"n/a", "na", "none", "null", "unknown", "not visible"}
+
+
+def _visible_value(value):
+    text = clean_text(value)
+    return "" if text.lower() in NOT_VISIBLE else text
+
+
 def _unique_authors(raw):
     seen, unique = set(), []
     for author in (a.strip() for a in (raw or "").split(",") if a.strip()):
@@ -918,7 +926,6 @@ def _empty_poster_result():
         "paper_link":  "",
         "github_link": "",
         "publication_year": "",
-        "notes":       "",
     }
 
 
@@ -1029,11 +1036,8 @@ def _analyze_and_enrich(image_path, overrides):
         "paper_link":  paper_link,
         "github_link": github_url,
         "publication_year": _resolve_year(info.get("year", ""), paper_result, paper_link),
-        "conference":  (paper_result or {}).get("conference") or (info.get("conference") or "").strip(),
+        "conference":  ((paper_result or {}).get("conference") or _visible_value(info.get("conference")))[:200],
+        "conference_from_proceedings": bool(paper_result and paper_result.get("source") == "proceedings"),
         "proceedings_verified": bool((paper_result or {}).get("verified")),
-        "notes": (
-            f"Auto-extracted by AI. "
-            f"Conference: {info.get('conference', 'N/A')}, "
-            f"Institution: {info.get('institution', 'N/A')}"
-        ),
+        "institution": _visible_value(info.get("institution"))[:500],
     }

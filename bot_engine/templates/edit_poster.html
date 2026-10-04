@@ -57,6 +57,9 @@
                 {% endfor %}
             {% endif %}
             {% endfor %}
+            <datalist id="conferenceOptions">
+                {% for label in conference_suggestions %}<option value="{{ label }}">{% endfor %}
+            </datalist>
 
             {% if can_edit_groups %}
             <div class="form-group max-sm:tw-mb-4">
