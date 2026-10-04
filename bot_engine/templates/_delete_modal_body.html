@@ -1,0 +1,28 @@
+{# Delete dialog body, shared by the dashboard and the poster page; js/poster-delete.js fills it. #}
+{# `bp` is the page's mobile breakpoint prefix (max-xl / max-sm). #}
+<h3 class="{{ bp }}:tw-text-lg">
+    <svg class="btn-icon icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        <line x1="12" y1="9"  x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+    <span id="deleteModalHeading">Confirm Delete</span>
+</h3>
+<form id="deleteForm" method="POST" action="">
+    {% csrf_token %}
+    <p class="{{ bp }}:tw-text-[0.92em]"><span id="deleteModalVerb">Are you sure you want to delete</span> "<span id="deletePosterTitle"></span>"?</p>
+    <p id="deleteModalStatus" class="text-muted" style="font-size: 0.9em;">Checking the paper's groups…</p>
+    <p id="deleteSharedNote" class="delete-shared-note" hidden></p>
+    <div id="deleteGroupsBox" class="delete-groups-box" hidden>
+        <span class="delete-groups-label">Remove from:</span>
+        <div id="deleteGroupChips" class="groups-editor-chips"></div>
+        <span id="deleteGroupsHint" class="helptext {{ bp }}:tw-text-xs"></span>
+    </div>
+    <p id="deleteIrreversible" class="text-muted" style="font-size: 0.9em;" hidden>This action cannot be undone.</p>
+    <div class="modal-actions tw-flex-wrap {{ bp }}:tw-flex-row {{ bp }}:tw-gap-2.5">
+        <button type="button" onclick="closeDeleteModal()" class="btn {{ bp }}:tw-flex-1 {{ bp }}:tw-p-3 {{ bp }}:tw-text-[0.9em] {{ bp }}:tw-text-center {{ bp }}:tw-rounded-lg">Cancel</button>
+        <button type="button" id="deleteToggleGroupsBtn" class="btn {{ bp }}:tw-flex-1 {{ bp }}:tw-p-3 {{ bp }}:tw-text-[0.9em] {{ bp }}:tw-text-center {{ bp }}:tw-rounded-lg" hidden>Remove from specific groups</button>
+        <button type="submit" id="deleteRemoveBtn" class="btn delete-confirm-btn {{ bp }}:tw-flex-1 {{ bp }}:tw-p-3 {{ bp }}:tw-text-[0.9em] {{ bp }}:tw-text-center {{ bp }}:tw-rounded-lg" hidden>Remove from selected groups</button>
+        <button type="submit" id="deleteConfirmBtn" class="btn delete-confirm-btn {{ bp }}:tw-flex-1 {{ bp }}:tw-p-3 {{ bp }}:tw-text-[0.9em] {{ bp }}:tw-text-center {{ bp }}:tw-rounded-lg" hidden>Delete</button>
+    </div>
+</form>

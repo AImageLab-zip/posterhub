@@ -749,6 +749,25 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .modal-actions { display: flex; gap: 12px; margin-top: 24px; justify-content: flex-end; }
 .delete-confirm-btn       { background: #dc2626; color: #fff; }
 .delete-confirm-btn:hover { background: #b91c1c; }
+.delete-confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+#deleteModal [hidden] { display: none !important; }
+.delete-shared-note {
+    padding: 10px 12px;
+    border-left: 3px solid var(--pending);
+    border-radius: 6px;
+    background: var(--pending-bg);
+    color: var(--text);
+    font-size: 0.9em;
+}
+.delete-groups-box { margin-top: 12px; }
+.delete-groups-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--text-label);
+}
+.delete-groups-box .groups-editor-chips { margin-bottom: 6px; }
 
 
 .activity-sidebar { margin-top: 24px; padding: 22px; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); border: 1px solid var(--border-card); animation: fadeInUp 0.4s ease-out 0.25s both; transition: background 0.3s ease; }

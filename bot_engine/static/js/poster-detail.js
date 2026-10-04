@@ -5,13 +5,7 @@ function copyDetailLink(text) {
 }
 
 function confirmDeleteDetail(posterId, posterTitle) {
-    document.getElementById('deletePosterTitle').textContent = posterTitle;
-    document.getElementById('deleteForm').action = '/delete/' + posterId + '/';
-    document.getElementById('deleteModal').style.display = 'flex';
-}
-
-function closeDeleteModal() {
-    document.getElementById('deleteModal').style.display = 'none';
+    openPosterDeleteModal(posterId, posterTitle);
 }
 
 function retryAnalysisDetail(posterId) {

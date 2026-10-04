@@ -993,63 +993,45 @@ function toggleFavorite(posterId, button) {
         .catch(() => showToast('Network error', 'error'));
 }
 
-let pendingDeleteId = null;
-
 function confirmDelete(posterId, posterTitle) {
-    pendingDeleteId = posterId;
-    document.getElementById('deletePosterTitle').textContent = posterTitle;
-    document.getElementById('deleteModal').style.display     = 'flex';
+    openPosterDeleteModal(posterId, posterTitle, onPosterDeleteDone);
 }
 
-function closeDeleteModal() {
-    document.getElementById('deleteModal').style.display = 'none';
-    pendingDeleteId = null;
-}
+function onPosterDeleteDone(kind, data, posterId) {
+    if (!data.success) {
+        showToast(data.error || (kind === 'remove' ? 'Error removing paper' : 'Error deleting paper'), 'error');
+        return;
+    }
 
-function executeDelete() {
-    if (!pendingDeleteId) return;
+    if (kind === 'remove') {
+        // The paper may still be visible (other groups of the caller, or uploader): just reload the table.
+        applyFilters({ pushHistory: false });
+    } else {
+        const row = document.querySelector(`tr[data-poster-id="${posterId}"]`);
+        if (row) {
+            row.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+            row.style.opacity    = '0';
+            row.style.transform  = 'translateX(-20px)';
 
-    const posterId = pendingDeleteId;
-    closeDeleteModal();
+            setTimeout(() => {
+                row.remove();
+                const tbody = document.querySelector('tbody');
+                if (tbody && tbody.children.length === 0) {
+                    const tc = document.getElementById('tableContainer');
+                    if (tc) tc.innerHTML = `
+                        <div class="empty-state">
+                            <p>No research papers available</p>
+                            <a href="/" class="btn">Add Your First Paper</a>
+                        </div>
+                    `;
+                }
+            }, 300);
+        }
+    }
 
-    fetch(`/delete/${posterId}/`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-            'X-CSRFToken': getCSRFToken(),
-            'X-Requested-With': 'XMLHttpRequest',
-        },
-    })
-        .then(res => res.json())
-        .then(data => {
-            if (!data.success) { showToast('Error deleting paper', 'error'); return; }
-
-            const row = document.querySelector(`tr[data-poster-id="${posterId}"]`);
-            if (row) {
-                row.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-                row.style.opacity    = '0';
-                row.style.transform  = 'translateX(-20px)';
-
-                setTimeout(() => {
-                    row.remove();
-                    const tbody = document.querySelector('tbody');
-                    if (tbody && tbody.children.length === 0) {
-                        const tc = document.getElementById('tableContainer');
-                        if (tc) tc.innerHTML = `
-                            <div class="empty-state">
-                                <p>No research papers available</p>
-                                <a href="/" class="btn">Add Your First Paper</a>
-                            </div>
-                        `;
-                    }
-                }, 300);
-            }
-
-            showToast(data.message);
-            updateStats(data.stats);
-            addActivity(data.activity);
-        })
-        .catch(() => showToast('Network error', 'error'));
+    showToast(data.message);
+    updateStats(data.stats);
+    addActivity(data.activity);
 }
 
 function clearAllActivities() {
@@ -1280,7 +1262,8 @@ function bulkAction(action) {
         if (typeof window.confirmDialog === 'function') {
             window.confirmDialog(
                 'Delete papers',
-                `Delete ${ids.length} paper${ids.length > 1 ? 's' : ''}? This cannot be undone.`,
+                `Delete ${ids.length} paper${ids.length > 1 ? 's' : ''}? This cannot be undone. `
+                + 'Papers also shared with groups you are not part of are only removed from your groups.',
                 'Delete',
                 run,
             );

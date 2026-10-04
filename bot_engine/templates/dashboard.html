@@ -328,20 +328,7 @@
 
     <div id="deleteModal" class="modal max-xl:tw-items-end" style="display: none;" onclick="if(event.target===this)closeDeleteModal()">
         <div class="modal-content max-xl:tw-w-full max-xl:tw-max-w-full max-xl:tw-m-0 max-xl:tw-p-[24px_20px] max-xl:tw-rounded-t-[16px] max-xl:tw-rounded-b-none max-xl:tw-animate-[modalSlideUpMobile_0.3s_ease-out]">
-            <h3 class="max-xl:tw-text-lg">
-                <svg class="btn-icon icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                    <line x1="12" y1="9"  x2="12" y2="13"/>
-                    <line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-                Confirm Delete
-            </h3>
-            <p class="max-xl:tw-text-[0.92em]">Are you sure you want to delete "<span id="deletePosterTitle"></span>"?</p>
-            <p class="text-muted" style="font-size: 0.9em;">This action cannot be undone.</p>
-            <div class="modal-actions max-xl:tw-flex-row max-xl:tw-gap-2.5">
-                <button onclick="closeDeleteModal()" class="btn max-xl:tw-flex-1 max-xl:tw-p-3 max-xl:tw-text-[0.9em] max-xl:tw-text-center max-xl:tw-rounded-lg">Cancel</button>
-                <button type="button" class="btn delete-confirm-btn max-xl:tw-flex-1 max-xl:tw-p-3 max-xl:tw-text-[0.9em] max-xl:tw-text-center max-xl:tw-rounded-lg" id="deleteConfirmBtn" onclick="executeDelete()">Delete</button>
-            </div>
+            {% include '_delete_modal_body.html' with bp='max-xl' %}
         </div>
     </div>
 
@@ -381,5 +368,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/dashboard.js' %}?v=20261004a" defer></script>
+<script src="{% static 'js/poster-delete.js' %}?v=20261004a" defer></script>
+<script src="{% static 'js/dashboard.js' %}?v=20261004b" defer></script>
 {% endblock %}
