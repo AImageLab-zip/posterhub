@@ -534,7 +534,7 @@ th { position: sticky; top: 0; z-index: 10; background: var(--table-th-bg); colo
 td { padding: 14px 16px; border-bottom: 1px solid var(--bg-surface); color: var(--text); vertical-align: top; font-size: 0.93em; transition: color 0.3s ease; }
 [data-theme="dark"] td { border-bottom-color: var(--border); }
 tr:last-child td { border-bottom: none; }
-tbody tr { transition: background 0.2s ease, box-shadow 0.2s ease; animation: rowEntrance 0.3s ease-out both; }
+tbody tr { transition: background 0.2s ease, box-shadow 0.2s ease; animation: rowEntrance 0.3s ease-out backwards; }
 tbody tr:nth-child(even) { background: var(--table-stripe); }
 tbody tr:hover           { background: var(--table-hover); }
 tbody tr.row-approved:hover { box-shadow: inset 3px 0 0 var(--approved); }
@@ -594,6 +594,12 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .row-approved   { box-shadow: inset 4px 0 0 var(--approved); }
 .row-pending    { box-shadow: inset 4px 0 0 var(--pending); }
 .row-rejected   { box-shadow: inset 4px 0 0 var(--rejected); }
+/* No status stripe on the desktop table: Chrome doesn't paint box-shadows on a
+   collapsed-border <tr> properly and left stale lines when a row's height changed
+   (Read more). Mobile rows are block cards and keep it. */
+@media (min-width: 1280px) {
+    #dashboard-table tbody tr { box-shadow: none; }
+}
 /* Approved = a reviewer accepted the poster without a paper, so no highlight */
 .row-incomplete:not(.row-approved) { background: #fff7ed !important; }
 [data-theme="dark"] .row-incomplete:not(.row-approved) { background: #241600 !important; }
@@ -765,6 +771,13 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .read-more-btn:hover { color: var(--primary-darker); background: var(--primary-muted); }
 .read-more-btn span { display: inline-flex; align-items: center; gap: 3px; }
 .text-preview, .text-full { line-height: 1.6em; }
+/* Expanding grows the row downwards, not the column: the full text is sized to the
+   column (width:0 + min-width:100% keeps it out of the table's width calculation)
+   while the invisible preview keeps reserving the column's usual width. */
+.expandable-text .text-full { display: none; }
+.expandable-text.is-expanded .text-preview { display: block; height: 0; overflow: hidden; visibility: hidden; }
+.expandable-text.is-expanded .text-full { display: block; width: 0; min-width: 100%; }
+.expandable-text.is-auto .read-more-btn { display: none; }
 
 
 .scroll-top-btn { position: fixed; right: 24px; bottom: 24px; z-index: 900; width: 38px; height: 38px; padding: 0; border-radius: var(--radius-md); border: 1px solid rgba(224,122,95,0.15); background: rgba(255,255,255,0.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--primary-darker); font-size: 1rem; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0,0,0,0.05); cursor: pointer; opacity: 0; transform: translateY(10px) scale(0.9); transition: opacity 0.3s ease, transform 0.3s ease, box-shadow 0.25s ease, background 0.2s ease; pointer-events: none; overflow: visible; }

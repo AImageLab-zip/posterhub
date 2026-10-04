@@ -1094,19 +1094,18 @@ function toggleActivitySidebar() {
 }
 
 function toggleText(type, posterId) {
-    const preview = document.getElementById(`${type}-preview-${posterId}`);
-    const full    = document.getElementById(`${type}-full-${posterId}`);
-    const btn     = document.getElementById(`${type}-btn-${posterId}`);
-    if (!preview || !full || !btn) return;
+    const btn = document.getElementById(`${type}-btn-${posterId}`);
+    const box = btn && btn.closest('.expandable-text');
+    if (!box) return;
 
-    const row = btn.closest('tr');
+    const row = box.closest('tr');
     const scrollBefore = window.scrollY;
     const rowTopBefore = row ? row.getBoundingClientRect().top : 0;
 
-    const collapsed = preview.style.display === 'none';
-    preview.style.display = collapsed ? 'inline' : 'none';
-    full.style.display    = collapsed ? 'none'   : 'inline';
-    btn.textContent       = collapsed ? '↓ Read more' : '↑ Hide';
+    const expand = !box.classList.contains('is-expanded');
+    box.classList.toggle('is-expanded', expand);
+    btn.textContent = expand ? '↑ Hide' : '↓ Read more';
+    if (row) fitRowText(row);
 
     if (row) {
         const rowTopAfter = row.getBoundingClientRect().top;
@@ -1119,6 +1118,34 @@ function toggleText(type, posterId) {
         }
     }
 }
+
+// While a row has user-expanded text, show in full any other truncated text in that
+// row that fits in the row's current height ('is-auto', no button); fold it back
+// once nothing in the row is expanded by the user.
+function fitRowText(row) {
+    const boxes = Array.from(row.querySelectorAll('.expandable-text'));
+    boxes.filter(b => b.classList.contains('is-auto'))
+         .forEach(b => b.classList.remove('is-expanded', 'is-auto'));
+    if (!boxes.some(b => b.classList.contains('is-expanded'))) return;
+
+    boxes.filter(b => !b.classList.contains('is-expanded')).forEach(b => {
+        const height = row.getBoundingClientRect().height;
+        b.classList.add('is-expanded', 'is-auto');
+        if (row.getBoundingClientRect().height > height + 0.5) {
+            b.classList.remove('is-expanded', 'is-auto');
+        }
+    });
+}
+
+let fitRowsTimer;
+window.addEventListener('resize', () => {
+    clearTimeout(fitRowsTimer);
+    fitRowsTimer = setTimeout(() => {
+        document.querySelectorAll('#dashboard-table tbody tr').forEach(row => {
+            if (row.querySelector('.expandable-text.is-expanded')) fitRowText(row);
+        });
+    }, 150);
+});
 
 const backToTopBtn = document.getElementById('backToTop');
 
