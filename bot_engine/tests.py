@@ -9,7 +9,7 @@ from django.urls import reverse
 
 from .access import GROUP_MANAGER_ROLE
 from .models import (
-    ActivityLog, PendingAssignmentDismissal, PosterGroupWhyUseful, ProceedingsSource, ResearchGroup,
+    ActivityLog, Favorite, PendingAssignmentDismissal, PosterGroupWhyUseful, ProceedingsSource, ResearchGroup,
     ResearchInterest, ResearchPoster, UserGroupMembership,
 )
 
@@ -309,6 +309,18 @@ class GroupManagementAccessTests(TestCase):
         response = self.client.get(reverse("dashboard"), {"search": "Alzheimer's"})
         self.assertContains(response, 'data-search-query="Alzheimer&#x27;s"')
 
+    def test_add_member_picker_lists_surname_first_alphabetically(self):
+        User = get_user_model()
+        User.objects.create_user(username="aa_rossi", first_name="Mario", last_name="Rossi")
+        User.objects.create_user(username="zz_bianchi", first_name="Anna", last_name="bianchi")
+        User.objects.create_user(username="b_rossi", first_name="Mario", last_name="Rossi")
+        User.objects.create_user(username="a_rossi_luca", first_name="Luca", last_name="Rossi")
+        self.sign_in("super_no_membership")
+        response = self.client.get(reverse("group_edit", args=[self.group.pk]))
+        named = [u.username for u in response.context["all_users"] if u.last_name]
+        self.assertEqual(named, ["zz_bianchi", "a_rossi_luca", "aa_rossi", "b_rossi"])
+        self.assertContains(response, "Bianchi Anna — zz_bianchi")
+
     def test_ordinary_users_cannot_open_management_pages_directly(self):
         for role in self.ordinary_users:
             self.sign_in(role)
@@ -453,7 +465,10 @@ class PosterGroupScopeTests(TestCase):
         self.client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
 
     def read_routes(self, poster):
-        return (("poster_detail", [poster.pk]), ("edit_poster", [poster.pk]))
+        return (
+            ("poster_detail", [poster.pk]), ("edit_poster", [poster.pk]),
+            ("poster_delete_options", [poster.pk]),
+        )
 
     def write_routes(self, poster):
         return (
@@ -465,6 +480,7 @@ class PosterGroupScopeTests(TestCase):
             ("stop_analysis", [poster.pk], {}),
             ("update_poster_groups", [poster.pk], {}),
             ("delete_poster", [poster.pk], {}),
+            ("remove_poster_groups", [poster.pk], {"group_ids": [self.team.pk]}),
         )
 
     def test_teammate_may_read_and_edit_a_paper_uploaded_by_someone_else(self):
@@ -687,6 +703,153 @@ class PosterGroupScopeTests(TestCase):
             reverse("dashboard"), fetch_redirect_response=False,
         )
         self.assertFalse(ActivityLog.objects.exists())
+
+
+@override_settings(
+    SHIBBOLETH_AUTH=False,
+    SECURE_SSL_REDIRECT=False,
+    ALLOWED_HOSTS=["testserver"],
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class PosterDeleteScopeTests(TestCase):
+    """Delete only removes a paper for everyone when it is in no group the caller is not in;
+    otherwise the caller can only take it out of their own groups."""
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.alice = User.objects.create_user(username="del_alice")
+        cls.bob = User.objects.create_user(username="del_bob")
+        cls.admin = User.objects.create_user(username="del_admin", is_superuser=True)
+
+        cls.vision = ResearchGroup.objects.create(name="Del vision")
+        cls.robotics = ResearchGroup.objects.create(name="Del robotics")
+        cls.medical = ResearchGroup.objects.create(name="Del medical")
+        UserGroupMembership.objects.create(user=cls.alice, group=cls.vision, is_primary=True)
+        UserGroupMembership.objects.create(user=cls.alice, group=cls.robotics)
+        UserGroupMembership.objects.create(user=cls.bob, group=cls.medical, is_primary=True)
+
+    def setUp(self):
+        self.shared = self._poster("Shared across teams", self.bob, self.vision, self.medical)
+        self.multi = self._poster("In two of alice's groups", self.bob, self.vision, self.robotics)
+        self.single = self._poster("Only vision", self.bob, self.vision)
+
+    @staticmethod
+    def _poster(title, uploader, *groups):
+        poster = ResearchPoster.objects.create(
+            title=title, authors="An Author", summary="A summary.",
+            validation_status="approved", uploaded_by=uploader,
+        )
+        poster.groups.add(*groups)
+        return poster
+
+    def sign_in(self, user):
+        self.client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
+
+    def ajax_post(self, route, poster, data=None):
+        return self.client.post(
+            reverse(route, args=[poster.pk]), data or {}, HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+    def group_ids(self, poster):
+        return set(poster.groups.values_list("pk", flat=True))
+
+    def test_options_compare_the_paper_groups_with_the_caller_groups(self):
+        self.sign_in(self.alice)
+        shared = self.client.get(reverse("poster_delete_options", args=[self.shared.pk])).json()
+        self.assertEqual(shared, {
+            "groups": [{"id": self.vision.pk, "name": "Del vision"}],
+            "has_other_groups": True, "can_delete": False,
+        })
+        multi = self.client.get(reverse("poster_delete_options", args=[self.multi.pk])).json()
+        self.assertTrue(multi["can_delete"])
+        self.assertEqual([g["name"] for g in multi["groups"]], ["Del robotics", "Del vision"])
+
+    def test_paper_shared_with_another_group_cannot_be_deleted(self):
+        self.sign_in(self.alice)
+        response = self.ajax_post("delete_poster", self.shared)
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.json()["success"])
+        self.assertEqual(self.group_ids(self.shared), {self.vision.pk, self.medical.pk})
+
+        response = self.client.post(reverse("delete_poster", args=[self.shared.pk]))
+        self.assertRedirects(
+            response, reverse("poster_detail", args=[self.shared.pk]), fetch_redirect_response=False,
+        )
+        self.assertTrue(ResearchPoster.objects.filter(pk=self.shared.pk).exists())
+
+    def test_removing_a_shared_paper_from_my_groups_keeps_it_for_the_others(self):
+        Favorite.objects.create(user=self.alice, poster=self.shared)
+        Favorite.objects.create(user=self.bob, poster=self.shared)
+        self.sign_in(self.alice)
+        response = self.ajax_post("remove_poster_groups", self.shared, {"group_ids": [self.vision.pk]})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["still_accessible"])
+        self.assertEqual(self.group_ids(self.shared), {self.medical.pk})
+        # alice lost access, so her star goes; bob's stays.
+        self.assertEqual(
+            list(Favorite.objects.filter(poster=self.shared).values_list("user__username", flat=True)),
+            ["del_bob"],
+        )
+        log = ActivityLog.objects.get(user=self.alice, action="updated")
+        self.assertIsNone(log.poster)
+        self.assertIn("Del vision", log.details)
+
+    def test_removing_from_some_of_my_groups_keeps_the_paper_visible(self):
+        self.sign_in(self.alice)
+        response = self.client.post(
+            reverse("remove_poster_groups", args=[self.multi.pk]), {"group_ids": [self.robotics.pk]},
+        )
+        self.assertRedirects(
+            response, reverse("poster_detail", args=[self.multi.pk]), fetch_redirect_response=False,
+        )
+        self.assertEqual(self.group_ids(self.multi), {self.vision.pk})
+
+    def test_removal_cannot_empty_a_deletable_paper_or_touch_other_groups(self):
+        self.sign_in(self.alice)
+        for poster, ids in (
+            (self.multi, [self.vision.pk, self.robotics.pk]),   # every group: use Delete instead
+            (self.single, [self.vision.pk]),
+            (self.shared, [self.medical.pk]),                   # not one of alice's groups
+            (self.shared, []),
+        ):
+            with self.subTest(poster=poster.title, ids=ids):
+                before = self.group_ids(poster)
+                response = self.ajax_post("remove_poster_groups", poster, {"group_ids": ids})
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(self.group_ids(poster), before)
+
+    def test_superuser_may_still_delete_a_shared_paper(self):
+        self.sign_in(self.admin)
+        self.assertTrue(self.client.get(reverse("poster_delete_options", args=[self.shared.pk])).json()["can_delete"])
+        self.assertEqual(self.ajax_post("delete_poster", self.shared).status_code, 200)
+        self.assertFalse(ResearchPoster.objects.filter(pk=self.shared.pk).exists())
+
+    def test_bulk_delete_only_detaches_papers_shared_with_other_groups(self):
+        self.sign_in(self.alice)
+        response = self.client.post(
+            reverse("bulk_action"),
+            data=json.dumps({"ids": [self.shared.pk, self.single.pk], "action": "delete"}),
+            content_type="application/json",
+        )
+        self.assertEqual(
+            response.json()["message"],
+            "1 papers deleted, 1 removed from your groups (shared with other groups)",
+        )
+        self.assertFalse(ResearchPoster.objects.filter(pk=self.single.pk).exists())
+        self.assertEqual(self.group_ids(self.shared), {self.medical.pk})
+
+    def test_both_pages_render_the_shared_dialog(self):
+        self.sign_in(self.alice)
+        for url in (reverse("dashboard"), reverse("poster_detail", args=[self.multi.pk])):
+            with self.subTest(url=url):
+                content = self.client.get(url).content.decode()
+                self.assertIn('id="deleteRemoveBtn"', content)
+                self.assertIn("js/poster-delete.js", content)
 
 
 @override_settings(

@@ -38,7 +38,7 @@ except ImportError:
 
 from .access import (
     accessible_posters, can_access_group, get_accessible_poster_or_404,
-    is_group_manager, user_can_interact,
+    is_group_manager, user_can_interact, user_group_ids,
 )
 from .forms import PosterUploadForm, PosterEditForm
 from .models import (
@@ -2072,6 +2072,37 @@ def _poster_groups_editor(user, poster_group_ids):
     return chips, user.is_superuser or any(g["is_assigned"] for g in chips)
 
 
+def _poster_removal_scope(user, poster, caller_group_ids=None):
+    """What the Delete dialog offers: the paper's groups the caller may remove it from, and whether it
+    may be deleted outright (only when it is in no group the caller is not in)."""
+    poster_groups = sorted(poster.groups.all(), key=lambda g: g.name.lower())
+    if user.is_superuser:
+        removable, has_other_groups = poster_groups, False
+    else:
+        if caller_group_ids is None:
+            caller_group_ids = set(user_group_ids(user))
+        removable = [g for g in poster_groups if g.pk in caller_group_ids]
+        has_other_groups = len(removable) < len(poster_groups)
+    return {
+        "groups": [{"id": g.pk, "name": g.name} for g in removable],
+        "has_other_groups": has_other_groups,
+        "can_delete": not has_other_groups,
+    }
+
+
+def _detach_poster_from_groups(poster, group_ids):
+    """Unlink the paper from the given groups and drop the stars of users who can no longer see it."""
+    poster.groups.remove(*group_ids)
+    remaining = list(poster.groups.values_list("pk", flat=True))
+    (
+        Favorite.objects.filter(poster=poster)
+        .exclude(user__is_superuser=True)
+        .exclude(user_id=poster.uploaded_by_id)
+        .exclude(user__group_memberships__group_id__in=remaining)
+        .delete()
+    )
+
+
 def _resolve_poster_group_ids(user, current_group_ids, raw_ids):
     """Final group ids for a paper: requested ids limited to the caller's groups, plus any
     groups the caller is not in (never detached). None when nothing would be left."""
@@ -2118,10 +2149,23 @@ def update_status(request, poster_id):
 
 
 @_groups_required
+def poster_delete_options(request, poster_id):
+    poster = get_accessible_poster_or_404(request.user, poster_id)
+    return JsonResponse(_poster_removal_scope(request.user, poster))
+
+
+@_groups_required
 def delete_poster(request, poster_id):
     if request.method == "POST":
         poster = get_accessible_poster_or_404(request.user, poster_id)
         title  = poster.title
+
+        if not _poster_removal_scope(request.user, poster)["can_delete"]:
+            error = "This paper is also shared with groups you are not in: remove it from your groups instead."
+            if _is_ajax(request):
+                return JsonResponse({"success": False, "error": error}, status=403)
+            messages.error(request, error)
+            return redirect("poster_detail", poster_id=poster.pk)
 
         _remove_poster_image(poster)
 
@@ -2140,6 +2184,56 @@ def delete_poster(request, poster_id):
                 "activity": _serialize_activity(activity),
             })
         messages.success(request, f'Paper "{title}" deleted successfully!')
+    return redirect("dashboard")
+
+
+@_groups_required
+def remove_poster_groups(request, poster_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    poster = get_accessible_poster_or_404(request.user, poster_id)
+    title  = poster.title
+    scope  = _poster_removal_scope(request.user, poster)
+    removable = {g["id"]: g["name"] for g in scope["groups"]}
+    requested = {int(gid) for gid in request.POST.getlist("group_ids") if str(gid).isdigit()}
+    to_remove = requested & removable.keys()
+
+    error = ""
+    if not to_remove:
+        error = "Select at least one of your groups."
+    elif scope["can_delete"] and to_remove == removable.keys():
+        # Would leave the paper in no group at all: that is what Delete is for.
+        error = "To remove the paper from all its groups, delete it instead."
+    if error:
+        if _is_ajax(request):
+            return JsonResponse({"success": False, "error": error}, status=400)
+        messages.error(request, error)
+        return redirect("poster_detail", poster_id=poster.pk)
+
+    with transaction.atomic():
+        _detach_poster_from_groups(poster, to_remove)
+    still_accessible = accessible_posters(request.user).filter(pk=poster.pk).exists()
+
+    names   = ", ".join(sorted((removable[gid] for gid in to_remove), key=str.lower))
+    message = f'Paper "{title}" removed from {names}.'
+    activity = ActivityLog.objects.create(
+        user=request.user, poster=poster if still_accessible else None, action="updated",
+        poster_title=title,
+        details=f'Paper "{title}" removed from {names}',
+    )
+
+    if _is_ajax(request):
+        return JsonResponse({
+            "success":          True,
+            "message":          message,
+            "still_accessible": still_accessible,
+            "stats":            _get_stats(request.user),
+            "activity":         _serialize_activity(activity),
+        })
+    messages.success(request, message)
+    if still_accessible:
+        return redirect("poster_detail", poster_id=poster.pk)
     return redirect("dashboard")
 
 
@@ -2264,17 +2358,35 @@ def bulk_action(request):
         message = f"{count} papers set to {action.capitalize()}"
 
     elif action == "delete":
-        logs = []
-        for poster in posters:
+        # Papers also in groups the caller is not in are only removed from the caller's groups.
+        caller_group_ids = set(user_group_ids(request.user))
+        logs, deleted, detached = [], [], 0
+        with transaction.atomic():
+            for poster in posters.prefetch_related("groups"):
+                scope = _poster_removal_scope(request.user, poster, caller_group_ids)
+                if scope["can_delete"]:
+                    deleted.append(poster)
+                    logs.append(ActivityLog(
+                        user=request.user, poster=None, action="deleted",
+                        poster_title=poster.title,
+                        details=f'Paper "{poster.title}" deleted (bulk)',
+                    ))
+                elif scope["groups"]:
+                    _detach_poster_from_groups(poster, [g["id"] for g in scope["groups"]])
+                    detached += 1
+                    names = ", ".join(g["name"] for g in scope["groups"])
+                    logs.append(ActivityLog(
+                        user=request.user, poster=None, action="updated",
+                        poster_title=poster.title,
+                        details=f'Paper "{poster.title}" removed from {names} (bulk)',
+                    ))
+            ResearchPoster.objects.filter(pk__in=[p.pk for p in deleted]).delete()
+            ActivityLog.objects.bulk_create(logs)
+        for poster in deleted:
             _remove_poster_image(poster)
-            logs.append(ActivityLog(
-                user=request.user, poster=None, action="deleted",
-                poster_title=poster.title,
-                details=f'Paper "{poster.title}" deleted (bulk)',
-            ))
-        posters.delete()
-        ActivityLog.objects.bulk_create(logs)
-        message = f"{count} papers deleted"
+        message = f"{len(deleted)} papers deleted"
+        if detached:
+            message += f", {detached} removed from your groups (shared with other groups)"
 
     elif action == "favorite":
         already = set(
@@ -2634,7 +2746,11 @@ def group_edit(request, group_id):
         messages.success(request, f'Group "{group.name}" updated.')
         return redirect("group_edit", group_id=group.pk)
     User = get_user_model()
-    all_users = User.objects.filter(is_active=True).order_by("username")
+    # Alphabetical by what the picker shows: "Surname Name", or the username when there is no name.
+    all_users = sorted(
+        User.objects.filter(is_active=True),
+        key=lambda u: (f"{u.last_name} {u.first_name}".strip() or u.username).casefold() + "\0" + u.username,
+    )
     return render(request, "groups/group_edit.html", {
         "group": group,
         "all_users": all_users,

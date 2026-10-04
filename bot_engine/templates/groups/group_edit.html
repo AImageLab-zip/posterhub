@@ -97,13 +97,13 @@
 
             <form method="POST" action="{% url 'group_add_member' group.pk %}" class="add-member-form">
                 {% csrf_token %}
-                <select name="user_ids" multiple required size="6">
+                <select name="user_ids" id="addMemberSelect" multiple required size="6">
                     {% for u in all_users %}
-                        <option value="{{ u.pk }}">{% if u.first_name or u.last_name %}{{ u.first_name|title }} {{ u.last_name|title }} — {{ u.username }}{% else %}{{ u.username }}{% endif %}</option>
+                        <option value="{{ u.pk }}">{% if u.first_name or u.last_name %}{{ u.last_name|title }}{% if u.last_name and u.first_name %} {% endif %}{{ u.first_name|title }} — {{ u.username }}{% else %}{{ u.username }}{% endif %}</option>
                     {% endfor %}
                 </select>
                 <div class="add-member-side">
-                    <button type="submit" class="group-btn primary">Add Selected</button>
+                    <button type="submit" class="group-btn primary" id="addMemberBtn">Add Selected</button>
                 </div>
                 <div class="add-member-hint">Tip: hold <kbd>Ctrl</kbd> (or <kbd>Cmd</kbd> on Mac) to select multiple users. Each user will later choose themselves which of their groups is their <em>primary</em>.</div>
             </form>
@@ -111,4 +111,8 @@
 
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/group-edit.js' %}"></script>
 {% endblock %}

@@ -325,23 +325,7 @@
 
 <div id="deleteModal" class="modal" style="display: none;" onclick="if(event.target===this)closeDeleteModal()">
     <div class="modal-content max-sm:tw-w-full max-sm:tw-max-w-full max-sm:tw-rounded-t-2xl max-sm:tw-rounded-b-none max-sm:tw-m-0 max-sm:tw-p-5">
-        <h3>
-            <svg class="btn-icon icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                <line x1="12" y1="9"  x2="12" y2="13"/>
-                <line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            Confirm Delete
-        </h3>
-        <p>Are you sure you want to delete "<span id="deletePosterTitle"></span>"?</p>
-        <p class="text-muted" style="font-size: 0.9em;">This action cannot be undone.</p>
-        <div class="modal-actions">
-            <button onclick="closeDeleteModal()" class="btn">Cancel</button>
-            <form id="deleteForm" method="POST" action="" style="display:inline;">
-                {% csrf_token %}
-                <button type="submit" class="btn delete-confirm-btn">Delete</button>
-            </form>
-        </div>
+        {% include '_delete_modal_body.html' with bp='max-sm' %}
     </div>
 </div>
 
@@ -369,5 +353,6 @@
     };
 </script>
 <script src="{% static 'js/tag-autocomplete.js' %}"></script>
-<script src="{% static 'js/poster-detail.js' %}?v=20260505a"></script>
+<script src="{% static 'js/poster-delete.js' %}?v=20261004a"></script>
+<script src="{% static 'js/poster-detail.js' %}?v=20261004a"></script>
 {% endblock %}

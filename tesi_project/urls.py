@@ -51,6 +51,8 @@ urlpatterns = [
     path("api/set-my-primary-group/",                        views.set_my_primary_group, name="set_my_primary_group"),
     path("api/poster/<int:poster_id>/why-useful/",           views.poster_why_useful_for_group, name="poster_why_useful_for_group"),
     path("poster/<int:poster_id>/update-groups/",            views.update_poster_groups,        name="update_poster_groups"),
+    path("poster/<int:poster_id>/delete-options/",           views.poster_delete_options,       name="poster_delete_options"),
+    path("poster/<int:poster_id>/remove-groups/",            views.remove_poster_groups,        name="remove_poster_groups"),
 
     path("my-groups/",                                       views.my_groups,           name="my_groups"),
 

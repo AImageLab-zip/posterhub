@@ -993,63 +993,45 @@ function toggleFavorite(posterId, button) {
         .catch(() => showToast('Network error', 'error'));
 }
 
-let pendingDeleteId = null;
-
 function confirmDelete(posterId, posterTitle) {
-    pendingDeleteId = posterId;
-    document.getElementById('deletePosterTitle').textContent = posterTitle;
-    document.getElementById('deleteModal').style.display     = 'flex';
+    openPosterDeleteModal(posterId, posterTitle, onPosterDeleteDone);
 }
 
-function closeDeleteModal() {
-    document.getElementById('deleteModal').style.display = 'none';
-    pendingDeleteId = null;
-}
+function onPosterDeleteDone(kind, data, posterId) {
+    if (!data.success) {
+        showToast(data.error || (kind === 'remove' ? 'Error removing paper' : 'Error deleting paper'), 'error');
+        return;
+    }
 
-function executeDelete() {
-    if (!pendingDeleteId) return;
+    if (kind === 'remove') {
+        // The paper may still be visible (other groups of the caller, or uploader): just reload the table.
+        applyFilters({ pushHistory: false });
+    } else {
+        const row = document.querySelector(`tr[data-poster-id="${posterId}"]`);
+        if (row) {
+            row.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+            row.style.opacity    = '0';
+            row.style.transform  = 'translateX(-20px)';
 
-    const posterId = pendingDeleteId;
-    closeDeleteModal();
+            setTimeout(() => {
+                row.remove();
+                const tbody = document.querySelector('tbody');
+                if (tbody && tbody.children.length === 0) {
+                    const tc = document.getElementById('tableContainer');
+                    if (tc) tc.innerHTML = `
+                        <div class="empty-state">
+                            <p>No research papers available</p>
+                            <a href="/" class="btn">Add Your First Paper</a>
+                        </div>
+                    `;
+                }
+            }, 300);
+        }
+    }
 
-    fetch(`/delete/${posterId}/`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-            'X-CSRFToken': getCSRFToken(),
-            'X-Requested-With': 'XMLHttpRequest',
-        },
-    })
-        .then(res => res.json())
-        .then(data => {
-            if (!data.success) { showToast('Error deleting paper', 'error'); return; }
-
-            const row = document.querySelector(`tr[data-poster-id="${posterId}"]`);
-            if (row) {
-                row.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-                row.style.opacity    = '0';
-                row.style.transform  = 'translateX(-20px)';
-
-                setTimeout(() => {
-                    row.remove();
-                    const tbody = document.querySelector('tbody');
-                    if (tbody && tbody.children.length === 0) {
-                        const tc = document.getElementById('tableContainer');
-                        if (tc) tc.innerHTML = `
-                            <div class="empty-state">
-                                <p>No research papers available</p>
-                                <a href="/" class="btn">Add Your First Paper</a>
-                            </div>
-                        `;
-                    }
-                }, 300);
-            }
-
-            showToast(data.message);
-            updateStats(data.stats);
-            addActivity(data.activity);
-        })
-        .catch(() => showToast('Network error', 'error'));
+    showToast(data.message);
+    updateStats(data.stats);
+    addActivity(data.activity);
 }
 
 function clearAllActivities() {
@@ -1094,19 +1076,18 @@ function toggleActivitySidebar() {
 }
 
 function toggleText(type, posterId) {
-    const preview = document.getElementById(`${type}-preview-${posterId}`);
-    const full    = document.getElementById(`${type}-full-${posterId}`);
-    const btn     = document.getElementById(`${type}-btn-${posterId}`);
-    if (!preview || !full || !btn) return;
+    const btn = document.getElementById(`${type}-btn-${posterId}`);
+    const box = btn && btn.closest('.expandable-text');
+    if (!box) return;
 
-    const row = btn.closest('tr');
+    const row = box.closest('tr');
     const scrollBefore = window.scrollY;
     const rowTopBefore = row ? row.getBoundingClientRect().top : 0;
 
-    const collapsed = preview.style.display === 'none';
-    preview.style.display = collapsed ? 'inline' : 'none';
-    full.style.display    = collapsed ? 'none'   : 'inline';
-    btn.textContent       = collapsed ? '↓ Read more' : '↑ Hide';
+    const expand = !box.classList.contains('is-expanded');
+    box.classList.toggle('is-expanded', expand);
+    btn.textContent = expand ? '↑ Hide' : '↓ Read more';
+    if (row) fitRowText(row);
 
     if (row) {
         const rowTopAfter = row.getBoundingClientRect().top;
@@ -1119,6 +1100,34 @@ function toggleText(type, posterId) {
         }
     }
 }
+
+// While a row has user-expanded text, show in full any other truncated text in that
+// row that fits in the row's current height ('is-auto', no button); fold it back
+// once nothing in the row is expanded by the user.
+function fitRowText(row) {
+    const boxes = Array.from(row.querySelectorAll('.expandable-text'));
+    boxes.filter(b => b.classList.contains('is-auto'))
+         .forEach(b => b.classList.remove('is-expanded', 'is-auto'));
+    if (!boxes.some(b => b.classList.contains('is-expanded'))) return;
+
+    boxes.filter(b => !b.classList.contains('is-expanded')).forEach(b => {
+        const height = row.getBoundingClientRect().height;
+        b.classList.add('is-expanded', 'is-auto');
+        if (row.getBoundingClientRect().height > height + 0.5) {
+            b.classList.remove('is-expanded', 'is-auto');
+        }
+    });
+}
+
+let fitRowsTimer;
+window.addEventListener('resize', () => {
+    clearTimeout(fitRowsTimer);
+    fitRowsTimer = setTimeout(() => {
+        document.querySelectorAll('#dashboard-table tbody tr').forEach(row => {
+            if (row.querySelector('.expandable-text.is-expanded')) fitRowText(row);
+        });
+    }, 150);
+});
 
 const backToTopBtn = document.getElementById('backToTop');
 
@@ -1253,7 +1262,8 @@ function bulkAction(action) {
         if (typeof window.confirmDialog === 'function') {
             window.confirmDialog(
                 'Delete papers',
-                `Delete ${ids.length} paper${ids.length > 1 ? 's' : ''}? This cannot be undone.`,
+                `Delete ${ids.length} paper${ids.length > 1 ? 's' : ''}? This cannot be undone. `
+                + 'Papers also shared with groups you are not part of are only removed from your groups.',
                 'Delete',
                 run,
             );
