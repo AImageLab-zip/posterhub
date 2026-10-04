@@ -929,7 +929,9 @@ def process_uploaded_poster(
         else:
             poster.why_useful = ""
 
-        poster.validation_status = "pending"
+        previous_status = poster.validation_status
+        auto_approved = enriched_data.get("proceedings_verified") and previous_status != "rejected"
+        poster.validation_status = "approved" if auto_approved else "pending"
         poster.analysis_status   = 'ok'
         poster.save()
 
@@ -952,6 +954,12 @@ def process_uploaded_poster(
                 "details": f"Uploaded via {source} + AI analysis",
             },
         )
+        if auto_approved and previous_status != "approved":
+            ActivityLog.objects.create(
+                user=None, poster=poster, action="status_changed",
+                poster_title=poster.title,
+                details=f"Status: {previous_status} → approved (auto: matched {poster.conference} proceedings)",
+            )
         return poster, enriched_data, None
 
     except Exception as e:

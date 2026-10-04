@@ -287,6 +287,23 @@ class ProceedingsMatchTests(TestCase):
         cvpr.save()
         self.assertEqual(search._search_proceedings(FEDAGREE, conference='CVPR 2026')['paper_url'], 'https://example.org/miccai')
 
+    def test_exact_title_backed_by_authors_or_conference_is_verified(self):
+        self.add(FEDAGREE, 'Giuseppe Serra, Ben Werner')
+        self.assertTrue(search._search_proceedings(FEDAGREE, 'Giuseppe Serra, Ben Werner')['verified'])
+        self.assertTrue(search._search_proceedings(FEDAGREE, conference='MICCAI 2023')['verified'])
+        self.assertFalse(search._search_proceedings(FEDAGREE, 'Someone Else', conference='CVPR 2026')['verified'])
+
+    def test_fuzzy_matches_are_never_verified(self):
+        full = ('Self-supervised Normality Learning and Divergence Vector-guided Model Merging '
+                'for Zero-shot Congenital Heart Disease Detection in Fetal Ultrasound Videos')
+        self.add(RALMPH, RALMPH_AUTHORS)
+        self.add(full, 'Pramit Saha, Divyanshu Mishra')
+        acronym = search._search_proceedings(RALPH_POSTER, 'Sungrae Hong, Jiwon Jeong', 'MICCAI 2026')
+        truncated = search._search_proceedings(full.split(' for ')[0], 'Pramit Saha, Divyanshu Mishra', 'MICCAI 2026')
+        self.assertEqual((acronym['title'], truncated['title']), (RALMPH, full))
+        self.assertFalse(acronym['verified'])
+        self.assertFalse(truncated['verified'])
+
     def test_search_paper_checks_proceedings_before_online_sources(self):
         self.add(FEDAGREE, 'Giuseppe Serra, Ben Werner')
         with patch.object(search, '_get_arxiv_paper') as arxiv:
@@ -315,6 +332,7 @@ class ProceedingsMatchTests(TestCase):
         self.assertEqual(result['paper_link'], 'https://papers.miccai.org/miccai-2026/0853-Paper1120.html')
         self.assertEqual((result['conference'], result['publication_year']), ('MICCAI 2026', 2026))
         self.assertEqual(result['authors'], RALMPH_AUTHORS)
+        self.assertFalse(result['proceedings_verified'])
 
     def test_repair_fills_link_and_blank_conference(self):
         self.add(FEDAGREE, 'Giuseppe Serra', url='https://papers.miccai.org/miccai-2026/0379-Paper5130.html')

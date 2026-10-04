@@ -10,7 +10,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 
 from . import paper_search as search
 from . import utils_ai as ai
-from .models import ResearchPoster
+from .models import ActivityLog, ResearchPoster
 
 SKIN = 'Skin-R1: Clinical Knowledge-Guided Dermatological Diagnosis Using Vision-Language Models'
 PHENO_POSTER = 'PhenoLIP: Phenotype Guided Medical Vision-Language Pretraining'
@@ -430,6 +430,38 @@ class PaperPersistenceTests(TestCase):
                 self.poster.refresh_from_db()
                 self.assertEqual(self.poster.ai_paper_link, 'https://arxiv.org/abs/2511.14900')
                 self.assertEqual(self.poster.ai_github_link, 'https://github.com/org/repo')
+
+    def reanalyse(self, verified, status='pending'):
+        from .views import process_uploaded_poster
+        self.poster.validation_status = status
+        self.poster.save()
+        with patch('bot_engine.views.analyze_and_enrich', return_value={
+            'is_research_poster': True, 'title': SKIN, 'summary': 'Summary',
+            'conference': 'MICCAI 2026', 'proceedings_verified': verified,
+        }):
+            _, _, error = process_uploaded_poster(None, None, existing_poster=self.poster)
+        self.assertIsNone(error)
+        self.poster.refresh_from_db()
+        return list(ActivityLog.objects.filter(poster=self.poster, action='status_changed'))
+
+    def test_verified_proceedings_match_auto_approves_and_logs_it(self):
+        logs = self.reanalyse(verified=True)
+        self.assertEqual(self.poster.validation_status, 'approved')
+        self.assertEqual(len(logs), 1)
+        self.assertIsNone(logs[0].user)
+        self.assertIn('auto: matched MICCAI 2026 proceedings', logs[0].details)
+
+    def test_unverified_analysis_stays_pending(self):
+        self.assertEqual(self.reanalyse(verified=False), [])
+        self.assertEqual(self.poster.validation_status, 'pending')
+
+    def test_auto_approval_never_overrides_a_rejection(self):
+        self.assertEqual(self.reanalyse(verified=True, status='rejected'), [])
+        self.assertEqual(self.poster.validation_status, 'pending')
+
+    def test_already_approved_poster_is_not_logged_again(self):
+        self.assertEqual(self.reanalyse(verified=True, status='approved'), [])
+        self.assertEqual(self.poster.validation_status, 'approved')
 
     def test_repair_previews_then_saves_only_missing_links(self):
         self.poster.paper_link = ''

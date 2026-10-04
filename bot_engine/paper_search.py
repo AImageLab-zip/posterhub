@@ -169,7 +169,7 @@ def _paper(**fields):
     result = {
         "title": "", "paper_url": "", "pdf_url": "", "arxiv_id": "", "doi": "",
         "authors": "", "abstract": "", "year": None, "_blocked": False, "source": "",
-        "conference": "",
+        "conference": "", "verified": False,
     }
     result.update(fields)
     return result
@@ -497,9 +497,15 @@ def _search_proceedings(title, authors="", conference=""):
     if best is None:
         return None
     source = best.source
+    _, conference_agrees, shared = best_key[:3]
+    # Only an exact title backed by the conference or the authors is trusted enough to auto-approve;
+    # fuzzy matches (similar, acronym, truncated) still go through manual review.
+    verified = (_title_words(title) == _title_words(best.title)
+                and (conference_agrees or shared >= MIN_SHARED_AUTHOR_TOKENS))
     return _paper(
         title=best.title, paper_url=best.url, pdf_url=best.pdf_url, authors=best.authors,
         year=source.year, source="proceedings", conference=f"{source.conference} {source.year}",
+        verified=verified,
     )
 
 

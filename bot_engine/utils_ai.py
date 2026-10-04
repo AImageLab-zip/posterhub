@@ -1030,6 +1030,7 @@ def _analyze_and_enrich(image_path, overrides):
         "github_link": github_url,
         "publication_year": _resolve_year(info.get("year", ""), paper_result, paper_link),
         "conference":  (paper_result or {}).get("conference") or (info.get("conference") or "").strip(),
+        "proceedings_verified": bool((paper_result or {}).get("verified")),
         "notes": (
             f"Auto-extracted by AI. "
             f"Conference: {info.get('conference', 'N/A')}, "
