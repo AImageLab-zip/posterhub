@@ -309,6 +309,18 @@ class GroupManagementAccessTests(TestCase):
         response = self.client.get(reverse("dashboard"), {"search": "Alzheimer's"})
         self.assertContains(response, 'data-search-query="Alzheimer&#x27;s"')
 
+    def test_add_member_picker_lists_surname_first_alphabetically(self):
+        User = get_user_model()
+        User.objects.create_user(username="aa_rossi", first_name="Mario", last_name="Rossi")
+        User.objects.create_user(username="zz_bianchi", first_name="Anna", last_name="bianchi")
+        User.objects.create_user(username="b_rossi", first_name="Mario", last_name="Rossi")
+        User.objects.create_user(username="a_rossi_luca", first_name="Luca", last_name="Rossi")
+        self.sign_in("super_no_membership")
+        response = self.client.get(reverse("group_edit", args=[self.group.pk]))
+        named = [u.username for u in response.context["all_users"] if u.last_name]
+        self.assertEqual(named, ["zz_bianchi", "a_rossi_luca", "aa_rossi", "b_rossi"])
+        self.assertContains(response, "Bianchi Anna — zz_bianchi")
+
     def test_ordinary_users_cannot_open_management_pages_directly(self):
         for role in self.ordinary_users:
             self.sign_in(role)

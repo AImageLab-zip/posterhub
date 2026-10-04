@@ -2634,7 +2634,11 @@ def group_edit(request, group_id):
         messages.success(request, f'Group "{group.name}" updated.')
         return redirect("group_edit", group_id=group.pk)
     User = get_user_model()
-    all_users = User.objects.filter(is_active=True).order_by("username")
+    # Alphabetical by what the picker shows: "Surname Name", or the username when there is no name.
+    all_users = sorted(
+        User.objects.filter(is_active=True),
+        key=lambda u: (f"{u.last_name} {u.first_name}".strip() or u.username).casefold() + "\0" + u.username,
+    )
     return render(request, "groups/group_edit.html", {
         "group": group,
         "all_users": all_users,
