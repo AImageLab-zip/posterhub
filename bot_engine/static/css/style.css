@@ -1347,7 +1347,8 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 
 .groups-editor-panel {
     display: none;
-    margin-top: 10px;
+    /* Collapses with the Groups row's 18px bottom margin to 10px; same 10px before the buttons. */
+    margin: -8px 0 10px;
     padding: 14px 16px;
     background: var(--bg-surface);
     border: 1px solid var(--border);
