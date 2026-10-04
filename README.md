@@ -9,7 +9,7 @@
 
 # PosterHub: Research Paper Assistant
 
-A Django web application for building a searchable, AI-powered library of scientific research posters and papers. Upload a poster via the web, Telegram, or WhatsApp: the system extracts metadata, finds the published paper, searches for the code repository, and saves everything in a structured dashboard.
+A Django web application for building a searchable, AI-powered library of scientific research posters and papers. Upload a poster via the web, Telegram, or WhatsApp: the system extracts metadata, matches it against scraped conference proceedings or finds the published paper online, locates the code repository, and saves everything in a structured dashboard.
 
 ---
 
@@ -24,10 +24,12 @@ A Django web application for building a searchable, AI-powered library of scient
 - Each paper can be assigned to one or more research groups; the dashboard, donut stats, and exports are always scoped to the groups the user belongs to (no cross-group leakage)
 - One **primary group** per user, used to pre-select chips on upload and to drive the per-group "Why useful" generation
 - **Per-paper, per-group group selection** at upload time: in multi-file batches each paper has its own group chips so different posters can land in different groups within the same submission
-- **Group editor on paper detail**: pencil button next to the Groups badges opens an inline panel with the user's groups; toggles only the user's memberships and preserves any other group's link to the paper
+- **Group editor on paper detail and Edit page**: pencil button next to the Groups badges (or the Groups chips on `/edit/<id>/`) toggles only the user's own groups and preserves any other group's link to the paper; at least one group must remain
+- **Per-group "Why useful" editing**: the Edit page shows one box per user group on the paper (for groups with research interests); emptying a box lets the AI regenerate it. The dashboard and bot search show the text of the user's default group (primary if assigned, otherwise the first by name)
 - **Mine** filter: dashboard pill that scopes the table and the donut to papers the current user uploaded
 - **Group management UI** (`/groups/`, group-manager or admin): create/edit/delete groups, add/remove members, set primary, and a "users awaiting group assignment" panel with one-click add-to-group plus a **Skip** action that suppresses the alert for users you do not want to assign
-- **My Groups** page (`/my-groups/`): each user can pick which of their groups is primary; group managers and admins can also open group and research-interest editing directly
+- **My Groups** page (`/my-groups/`): each user can pick which of their groups is primary and browse the other groups with their research interests; group managers and admins can also open group and research-interest editing directly
+- **Safe group changes**: deleting a group warns which papers and users would be left without any group, removing a user's last group asks for confirmation, and deleting a primary membership promotes the user's oldest remaining group to primary
 - **Manage Groups** is available to group managers and admins from Upload, Dashboard, Conference and My Groups, including when they have no research-group membership. **Users** remains admin-only
 
 ### Access Control & Roles
@@ -46,7 +48,8 @@ The platform has three role levels:
 
 ### AI-Powered Extraction (GPT-4o Vision)
 From a single poster image the system extracts:
-- Title, authors, abstract, keywords, category, conference, year, institution
+- Title, authors, abstract, keywords, category, conference, year, institution, and any GitHub URL printed on the poster
+- Conference and institution are stored in their own fields (editable on the Edit page, with conference autocomplete); they are no longer written into the notes
 - Automatic classification into: ML, CV, NLP, Robotics, HCI, Data Science, Theory, Systems
 - Non-research image detection -- rejects photos that do not contain scientific content
 
@@ -54,12 +57,16 @@ From a single poster image the system extracts:
 
 | Step | Source | Purpose |
 |------|--------|---------|
-| 1 | Visible arXiv ID and arXiv title search | Verified paper page, PDF, authors, abstract and year; title/acronym queries also handle different poster subtitles |
-| 2 | arXiv web search | Independent fallback when the export API cannot supply a matching paper |
-| 3 | Semantic Scholar, then Google Scholar | Additional sources, bounded retries, explicit HTTP/challenge logging, and title validation |
+| 1 | Conference proceedings (local DB) | Match the title against scraped paper lists of MICCAI, CVPR, ICCV, WACV, ECCV, NeurIPS, ICML, ICLR; a hit gives paper page, PDF, authors, year and conference, and skips steps 2-3 |
+| 2 | Visible arXiv ID and arXiv title search | Verified paper page, PDF, authors, abstract and year; title/acronym queries also handle different poster subtitles |
+| 3 | arXiv web search, then Semantic Scholar and Google Scholar | Fallbacks with bounded retries, explicit HTTP/challenge logging, and title validation |
 | 4 | Paper page / DOI / PDF search | Locate a usable PDF; recover the paper link from a PDF-only match |
-| 5 | PDF annotations, PDF text, paper page, GitHub API | Find the code repository |
+| 5 | PDF link annotations, PDF text, GitHub URL printed on the poster | Find the code repository (no GitHub API search) |
 | 6 | Located GitHub project | Recover a missing paper from arXiv references, validating the referenced title |
+
+When the paper comes from a trusted source (proceedings, arXiv, Semantic Scholar),
+its title replaces the one read from the poster, fixing transcription errors.
+Titles and author lists are cleaned of LaTeX, HTML entities and stray symbols.
 
 arXiv metadata is cached (successful queries for 24 hours, empty results for five
 minutes), with shared request spacing. Provider outages are not cached as missing
@@ -79,10 +86,36 @@ docker compose exec django python manage.py repair_paper_links 157 158 --apply
 The command preserves existing links, summaries, notes, groups and validation
 status, and skips records whose analysis is currently running.
 
+### Conference Proceedings
+
+Before searching online, every poster is matched against locally stored conference
+paper lists. A match is accepted when the title passes the usual title validation,
+or when a near match (similar acronym, truncated title) shares at least two author
+names. The conference field is then set from the source (e.g. `MICCAI 2025`).
+
+- **Auto-approve**: a match with an identical title, backed by the conference
+  printed on the poster or by shared authors, sets the paper to **Approved** and
+  records it in the activity log. Fuzzy matches stay Pending, and a paper that
+  was rejected is never auto-approved
+- **Sources** (`ProceedingsSource`) are managed by admins in Django admin at
+  `/admin/bot_engine/proceedingssource/`: one row per conference year with URL,
+  parser and JSON options. A guide to the parsers is shown below the list
+- **Parsers**: `miccai_json` (MICCAI open access), `virtual_site_json`
+  (NeurIPS / ICML / ICLR / CVPR virtual sites), `cvf_html` (CVF open access and
+  ECVA), `html_selectors` (any regular list page, CSS selectors), `html_links`
+  (last resort, title-like links)
+- **Sync**: weekly via Celery Beat (Monday 04:00, configurable with
+  `PROCEEDINGS_SYNC_DAY_OF_WEEK` / `PROCEEDINGS_SYNC_HOUR`), right after a source
+  is added or changed, from the admin action *Sync selected sources now*, or with
+  `python manage.py sync_proceedings [ids...]`. A failed or empty sync keeps the
+  previous list and records the error on the source
+- Migration `0031` seeds MICCAI 2024-2026, CVPR 2025-2026, ICCV 2025, WACV 2026,
+  ECCV 2024, NeurIPS 2024-2025, ICML 2025-2026 and ICLR 2025-2026
+
 ### Dashboard
 - Full table view: title, authors, category, tags, paper link, GitHub link, summary, notes
 - Poster thumbnail in a unified "Links & Poster" column
-- Advanced search: filter by author, description, date range
+- Search covers title, authors, summary, tags, subfields, conference and institution; advanced search filters by author, description, date range
 - Column sorting: clickable headers for ID/date, title, category, status
 - Filter by status (Pending / Approved / Rejected), category, subfields, favorites, GitHub availability
 - Inline notes: add/edit personal notes directly in the table row
@@ -91,7 +124,9 @@ status, and skips records whose analysis is currently running.
 - Stat tiles with live counters (total, pending, approved, rejected, favorites)
 - Activity log with clear-all option
 - `NEW` badge on papers uploaded in the last 24 hours
-- Export approved papers as CSV or JSON
+- **Paper not found** badge on finished analyses without a paper link
+- Conference chip in each row (click to filter the dashboard by that conference); institution and conference on the paper detail page
+- Export approved papers as CSV or JSON (includes institution and conference)
 
 ### Upload Page
 - Drag-and-drop single or multiple images at once
@@ -140,8 +175,8 @@ Both bots support:
 | Task Queue | Celery 5.4, Redis 7 |
 | Database | MySQL 8.4 |
 | AI | OpenAI GPT-4o (Vision) |
-| Paper search | Semantic Scholar, Google Scholar, arXiv |
-| Code search | GitHub API, pypdf, BeautifulSoup |
+| Paper search | Scraped conference proceedings, arXiv, Semantic Scholar, Google Scholar |
+| Code search | pypdf (PDF links and text), BeautifulSoup |
 | Messaging | Telegram Bot API, WhatsApp Cloud API |
 | Frontend | Django templates, Tailwind CSS (CDN), vanilla JS |
 | Reverse Proxy | Apache HTTPD 2.4 |
@@ -219,8 +254,16 @@ WHATSAPP_VERIFY_TOKEN=your_webhook_verify_token
 # Semantic Scholar (optional, improves paper search)
 SEMANTIC_SCHOLAR_API_KEY=your_key
 
-# GitHub API (optional, higher rate limits)
-GITHUB_TOKEN=your_github_token
+# Google Custom Search (optional, used by the Conference page lookup)
+GOOGLE_CSE_API_KEY=your_key
+GOOGLE_CSE_CX=your_cx
+
+# Shown to users not yet in a research group (optional)
+ADMIN_CONTACT_EMAIL=admin@example.com
+
+# Weekly proceedings sync (optional, defaults shown)
+PROCEEDINGS_SYNC_DAY_OF_WEEK=mon
+PROCEEDINGS_SYNC_HOUR=4
 
 # Shibboleth SSO (production only)
 SHIBBOLETH_AUTH=true
@@ -239,7 +282,7 @@ This starts five containers (plus the front Apache, when enabled):
 | `posterhub-redis` | Redis 7 (Celery broker + cache) |
 | `posterhub-django` | Gunicorn (3 workers, 120s timeout); runs `migrate` + `collectstatic` on entrypoint |
 | `posterhub-worker` | Celery worker (async tasks) |
-| `posterhub-beat` | Celery beat (scheduled tasks, persistent schedule) |
+| `posterhub-beat` | Celery beat (weekly proceedings sync, persistent schedule) |
 
 ### 4. Configure bot webhooks
 Set webhook URLs in each platform's dashboard:
@@ -263,16 +306,21 @@ PaperProject/
 │   └── httpd.conf
 ├── bot_engine/
 │   ├── models.py              # ResearchPoster, ResearchGroup, UserGroupMembership,
-│   │                          # PendingAssignmentDismissal, BotAccount, ...
+│   │                          # PendingAssignmentDismissal, BotAccount,
+│   │                          # ProceedingsSource, ProceedingsPaper, ...
 │   ├── views.py               # Web views, group/user management, bot webhook handlers
-│   ├── tasks.py               # Celery tasks (media download, AI analysis)
+│   ├── tasks.py               # Celery tasks (media download, AI analysis, proceedings sync)
 │   ├── middleware.py          # Shibboleth auth (auto-creates Django users from headers)
 │   ├── access.py              # is_group_manager / user_can_interact helpers
 │   ├── context_processors.py  # No-groups banner + role flags for templates
-│   ├── utils_ai.py            # OpenAI integration, paper/code search
+│   ├── utils_ai.py            # OpenAI integration, enrichment, code search
+│   ├── paper_search.py        # Proceedings matching, arXiv / Semantic Scholar / Google Scholar
+│   ├── proceedings.py         # Proceedings scrapers and sync
+│   ├── text_cleaning.py       # LaTeX / HTML clean-up of titles and authors
 │   ├── prompts.py             # GPT-4o system prompts
 │   ├── forms.py               # Upload and edit forms
-│   ├── admin.py               # Django admin registrations (ResearchGroup, memberships, ...)
+│   ├── admin.py               # Django admin registrations (groups, memberships, proceedings sources, ...)
+│   ├── management/commands/   # repair_paper_links, sync_proceedings, regenerate_thumbnails, backfill_year
 │   ├── migrations/
 │   ├── static/
 │   │   ├── css/style.css
@@ -336,6 +384,7 @@ PaperProject/
 | `/users/<id>/delete/` | POST | Hard-delete user (cascades to memberships, favorites, bot accounts, dismissal) |
 | `/export/approved/csv/` | GET | Export approved papers (CSV) |
 | `/export/approved/json/` | GET | Export approved papers (JSON) |
+| `/admin/bot_engine/proceedingssource/` | GET/POST | Manage proceedings sources (Django admin, superuser) |
 | `/telegram-webhook/` | POST | Telegram bot webhook |
 | `/whatsapp-webhook/` | GET/POST | WhatsApp bot webhook |
 
@@ -368,6 +417,8 @@ docker compose up --build -d
 - Media files (poster images) are served directly by Apache via the `/app/media/` volume mount
 - The AI pipeline handles non-research images, API errors, and network failures gracefully
 - Failed analyses are kept in DB for retry -- only duplicates and non-scientific images are auto-deleted
+- New analyses land as Pending, except exact proceedings matches, which are auto-approved
+- Thumbnails apply the photo's EXIF orientation; run `python manage.py regenerate_thumbnails` (`--dry-run` to preview) to fix older portrait posters shown sideways
 - Bot media downloads run asynchronously in Celery to prevent webhook timeouts
 - Redis is used both as the Celery broker and as a Django cache backend for bot state management
 - Redis locks prevent duplicate processing of the same poster across workers
@@ -377,8 +428,9 @@ docker compose up --build -d
 
 ## Regression tests
 
-Run the group-management navigation and authorization checks with an isolated
-in-memory SQLite database and cache:
+The suites (`tests.py`, `test_paper_pipeline.py`, `test_proceedings.py`,
+`test_security_auth.py`, `test_security_output.py`) run with an isolated
+in-memory SQLite database and cache, and mock all network calls:
 
 ```bash
 python manage.py test bot_engine --settings=tesi_project.test_settings --noinput
