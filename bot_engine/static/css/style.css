@@ -927,6 +927,13 @@ body.upload-page .dark-toggle { bottom: 24px; }
 .lightbox-close::before { display:none; }
 .lightbox-close::after { display:none; }
 @keyframes lbFadeIn { from{opacity:0} to{opacity:1} }
+/* Shown while the full-res poster downloads; delayed so cached images don't flash it */
+.lightbox-loading { display:none; position:absolute; flex-direction:column; align-items:center; gap:12px; padding:18px 26px; border-radius:12px; background:rgba(255,255,255,0.12); backdrop-filter:blur(8px); color:#fff; font-size:0.9em; font-weight:600; pointer-events:none; }
+.lightbox-overlay.lb-loading .lightbox-loading { display:flex; animation:lbFadeIn .2s ease .15s both; }
+.lightbox-overlay.lb-loading .lightbox-img { visibility:hidden; }
+.lightbox-spinner { width:32px; height:32px; border:3px solid rgba(255,255,255,0.25); border-top-color:#fff; border-radius:50%; animation:lbSpin .8s linear infinite; }
+.lightbox-overlay.lb-error .lightbox-spinner { display:none; }
+@keyframes lbSpin { to { transform:rotate(360deg); } }
 
 /* Tag autocomplete dropdown */
 .tag-ac-dropdown { display: none; position: absolute; left: 0; right: 0; z-index: 100; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: 0 4px 16px rgba(0,0,0,.12); max-height: 200px; overflow-y: auto; margin-top: 2px; }
