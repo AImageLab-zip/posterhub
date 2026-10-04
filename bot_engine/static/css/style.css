@@ -555,7 +555,7 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 .links-row { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; }
 .poster-thumb-link { display: block; }
 
-.poster-thumbnail { width: 140px; height: auto; max-height: 160px; object-fit: contain; border-radius: var(--radius-md); border: 2px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: all 0.2s ease; cursor: pointer; }
+.poster-thumbnail { width: 140px; height: auto; max-height: 160px; object-fit: cover; border-radius: var(--radius-md); border: 2px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: all 0.2s ease; cursor: pointer; }
 .poster-thumbnail:hover { transform: scale(1.05); border-color: var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
 
 .id-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; padding: 4px 10px; border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-muted); font-weight: 700; font-size: 0.82em; border: 1px solid var(--border); }
@@ -597,8 +597,13 @@ tbody tr.row-rejected:hover { box-shadow: inset 3px 0 0 var(--rejected); }
 /* No status stripe on the desktop table: Chrome doesn't paint box-shadows on a
    collapsed-border <tr> properly and left stale lines when a row's height changed
    (Read more). Mobile rows are block cards and keep it. */
-@media (min-width: 1280px) {
+@media (min-width: 1200px) {
     #dashboard-table tbody tr { box-shadow: none; }
+}
+/* Phone card: a zero-width copy of the ID badge's box (font, padding, border) makes the
+   checkbox cell exactly as tall as the badge, so the checkbox centres on it. */
+@media (max-width: 1199.98px) {
+    .bulk-cell::before { content: '\200b'; width: 0; font-size: 0.78em; padding: 3px 0; border: 1px solid transparent; }
 }
 /* Approved = a reviewer accepted the poster without a paper, so no highlight */
 .row-incomplete:not(.row-approved) { background: #fff7ed !important; }

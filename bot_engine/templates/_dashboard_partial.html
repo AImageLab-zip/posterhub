@@ -31,12 +31,12 @@
             data-poster-id="{{ poster.id }}"
             data-analysis-status="{{ poster.analysis_status }}">
 
-            {# ── TD1: Checkbox — absolute top-right on mobile ── #}
-            <td class="max-xl:tw-block max-xl:tw-absolute max-xl:tw-right-3 max-xl:tw-top-3 max-xl:tw-w-auto max-xl:tw-z-[2] max-xl:tw-p-0 max-xl:tw-border-b-0"><input type="checkbox" class="bulk-checkbox max-xl:tw-w-5 max-xl:tw-h-5 max-xl:tw-p-2.5 max-xl:-tw-m-2.5 max-xl:tw-cursor-pointer" value="{{ poster.id }}" onchange="updateBulkBar()"></td>
+            {# ── TD1: Checkbox — on mobile, top-right at the card padding, centred on the ID badge; the label widens the tap target ── #}
+            <td class="bulk-cell max-xl:tw-flex max-xl:tw-items-center max-xl:tw-absolute max-xl:tw-right-4 max-xl:tw-top-[14px] max-xl:tw-w-auto max-xl:tw-z-[2] max-xl:tw-p-0 max-xl:tw-border-b-0 max-xl:tw-text-[0.88em] max-xl:tw-leading-[1.4]"><label class="max-xl:tw-flex max-xl:tw-p-2.5 max-xl:-tw-m-2.5 max-xl:tw-cursor-pointer"><input type="checkbox" class="bulk-checkbox max-xl:tw-w-5 max-xl:tw-h-5 max-xl:tw-m-0 max-xl:tw-cursor-pointer" value="{{ poster.id }}" onchange="updateBulkBar()"></label></td>
 
             {# ── TD2: ID cell — flex row on mobile ── #}
             <td class="max-xl:tw-flex max-xl:tw-items-center max-xl:tw-gap-1.5 max-xl:tw-mb-1.5 max-xl:tw-pr-[36px] max-xl:tw-p-0 max-xl:tw-border-b-0 max-xl:tw-text-[0.88em] max-xl:tw-leading-[1.4]">
-                <div class="id-cell">
+                <div class="id-cell max-xl:!tw-flex-row max-xl:!tw-items-center max-xl:!tw-gap-1.5">
                     <div class="id-cell-top">
                         <span class="id-badge max-xl:tw-text-[0.78em] max-xl:tw-py-[3px] max-xl:tw-px-2 max-xl:tw-rounded-md max-xl:tw-min-w-0">{{ poster.id }}</span>
                     </div>
