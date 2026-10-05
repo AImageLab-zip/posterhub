@@ -395,3 +395,93 @@ document.addEventListener('click', function (e) {
         if (cancelBtn) cancelBtn.addEventListener('click', close);
     });
 })();
+
+(function () {
+    var cfg = window.posterDetailConfig || {};
+    var editBtn  = document.getElementById('notesEditBtn');
+    var editor   = document.getElementById('notesEditor');
+    var display  = document.getElementById('notesDisplay');
+    var textarea = document.getElementById('notesTextarea');
+    var counter  = document.getElementById('notesCounter');
+    var saveBtn  = document.getElementById('notesSaveBtn');
+    var cancelBtn = document.getElementById('notesCancelBtn');
+    if (!editBtn || !editor || !display || !textarea || !cfg.posterId) return;
+
+    var savedNotes = textarea.value;
+
+    function updateCounter() {
+        if (!counter) return;
+        counter.textContent = textarea.value.length;
+        counter.parentElement.classList.toggle('over-limit', textarea.value.length >= 500);
+    }
+
+    function renderNotes(notes) {
+        display.innerHTML = '';
+        var div = document.createElement('div');
+        if (notes) {
+            div.className = 'detail-notes-text';
+            div.textContent = notes;
+        } else {
+            div.className = 'detail-section-body empty';
+            div.textContent = 'No notes added yet.';
+        }
+        display.appendChild(div);
+        editBtn.textContent = notes ? 'Edit' : 'Add note';
+    }
+
+    function openEditor() {
+        textarea.value = savedNotes;
+        updateCounter();
+        display.style.display = 'none';
+        editor.style.display = 'block';
+        editBtn.style.display = 'none';
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
+
+    function closeEditor() {
+        editor.style.display = 'none';
+        display.style.display = '';
+        editBtn.style.display = '';
+    }
+
+    function save() {
+        var notes = textarea.value.trim();
+        saveBtn.disabled = true;
+        fetch('/update-notes/' + cfg.posterId + '/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRFToken': getCSRFToken(),
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ notes: notes }),
+        })
+        .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+        .then(function (res) {
+            saveBtn.disabled = false;
+            if (!res.ok || !res.data || !res.data.success) {
+                showToast((res.data && res.data.message) || 'Error saving notes', 'error');
+                return;
+            }
+            savedNotes = notes;
+            renderNotes(notes);
+            closeEditor();
+            showToast(res.data.message || 'Notes saved!');
+        })
+        .catch(function () {
+            saveBtn.disabled = false;
+            showToast('Network error', 'error');
+        });
+    }
+
+    editBtn.addEventListener('click', openEditor);
+    cancelBtn.addEventListener('click', closeEditor);
+    saveBtn.addEventListener('click', save);
+    textarea.addEventListener('input', updateCounter);
+    textarea.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); closeEditor(); }
+        else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+    });
+})();

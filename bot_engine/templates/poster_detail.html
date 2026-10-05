@@ -226,18 +226,35 @@
                 </div>
             </div>
 
-            <div class="detail-section max-md:tw-col-auto max-sm:tw-p-3 max-sm:tw-rounded-lg">
-                <div class="detail-section-title max-sm:tw-text-[0.72em]">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                    Notes
+            <div class="detail-section max-md:tw-col-auto max-sm:tw-p-3 max-sm:tw-rounded-lg" id="notesSection">
+                <div class="detail-section-title with-actions max-sm:tw-text-[0.72em]">
+                    <span class="detail-section-title-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                        Notes
+                    </span>
+                    {% if poster.analysis_status != 'processing' %}
+                    <button type="button" id="notesEditBtn" class="notes-toggle detail-notes-edit-btn">{% if poster.notes %}Edit{% else %}Add note{% endif %}</button>
+                    {% endif %}
                 </div>
-                {% if poster.notes %}
-                    <div class="detail-notes-text">{{ poster.notes }}</div>
-                {% else %}
-                    <div class="detail-section-body empty">No notes added yet.</div>
+                <div id="notesDisplay">
+                    {% if poster.notes %}
+                        <div class="detail-notes-text">{{ poster.notes }}</div>
+                    {% else %}
+                        <div class="detail-section-body empty">No notes added yet.</div>
+                    {% endif %}
+                </div>
+                {% if poster.analysis_status != 'processing' %}
+                <div class="notes-editor" id="notesEditor" style="display: none;">
+                    <textarea class="notes-textarea" id="notesTextarea" rows="4" maxlength="500" placeholder="Personal notes about this paper…">{{ poster.notes|default_if_none:"" }}</textarea>
+                    <small class="char-counter"><span id="notesCounter">{{ poster.notes|default_if_none:""|length }}</span>/500</small>
+                    <div class="notes-actions">
+                        <button type="button" id="notesSaveBtn" class="notes-save-btn">Save</button>
+                        <button type="button" id="notesCancelBtn" class="notes-cancel-btn">Cancel</button>
+                    </div>
+                </div>
                 {% endif %}
             </div>
 
@@ -354,5 +371,5 @@
 </script>
 <script src="{% static 'js/tag-autocomplete.js' %}"></script>
 <script src="{% static 'js/poster-delete.js' %}?v=20261004a"></script>
-<script src="{% static 'js/poster-detail.js' %}?v=20261004a"></script>
+<script src="{% static 'js/poster-detail.js' %}?v=20261005a"></script>
 {% endblock %}
