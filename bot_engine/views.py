@@ -809,8 +809,9 @@ def process_uploaded_poster(
             if poster.title in ("Pending analysis…", ""):
                 poster.title = "Analysis Failed"
             poster.analysis_status = 'failed'
+            poster.analysis_error = enriched_data.get("_ai_error_detail") or "AI analysis failed"
             if poster.pk:
-                poster.save(update_fields=["title", "analysis_status", "uploaded_by", "updated_at"])
+                poster.save(update_fields=["title", "analysis_status", "analysis_error", "uploaded_by", "updated_at"])
             else:
                 poster.save()
             return poster, None, "analysis_failed"
@@ -936,6 +937,7 @@ def process_uploaded_poster(
         auto_approved = enriched_data.get("proceedings_verified") and previous_status != "rejected"
         poster.validation_status = "approved" if auto_approved else "pending"
         poster.analysis_status   = 'ok'
+        poster.analysis_error    = None
         poster.save()
 
         if group_ids:

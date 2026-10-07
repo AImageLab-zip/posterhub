@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+import time
 from urllib.parse import quote_plus, urljoin
 
 import requests
@@ -47,6 +48,9 @@ MAX_HTML_BYTES = 8 * 1024 * 1024
 MAX_PDF_TEXT_CHARS = 400_000
 GITHUB_API_TIMEOUT = (CONNECT_TIMEOUT, 10)
 OPENAI_MODEL = "gpt-4o"
+POSTER_EXTRACTION_ATTEMPTS = 3  # first call + 2 retries
+POSTER_EXTRACTION_RETRY_DELAY = 5
+ERROR_SNIPPET_CHARS = 500
 PDF_MAGIC = b"%PDF"
 
 VALID_SUBFIELDS = {
@@ -235,9 +239,10 @@ def _parse_subfields(raw_subfields):
     return ",".join(valid)
 
 
-def _fallback():
+def _fallback(error=""):
     return {
         "_ai_error":          True,
+        "_ai_error_detail":   error,
         "is_research_poster": True,
         "title":              "Analysis Failed",
         "authors":            "",
@@ -269,20 +274,45 @@ def _encode_image_to_base64(image_path):
     return f"data:{mime};base64,{b64}"
 
 
+def _extract_poster_once(client, request_kwargs):
+    """One extraction call; returns (info, "") or (None, reason)."""
+    try:
+        response = client.chat.completions.create(model=OPENAI_MODEL, **request_kwargs)
+        choice = response.choices[0]
+        text = (choice.message.content or "").strip()
+    except Exception as e:
+        return None, f"OpenAI request failed: {type(e).__name__}: {str(e)[:300]}"
+    try:
+        info = json.loads(text.replace("```json", "").replace("```", "").strip())
+    except (ValueError, TypeError):
+        info = None
+    if not isinstance(info, dict):
+        return None, (f"Malformed JSON (finish_reason={getattr(choice, 'finish_reason', None)}): "
+                      f"{text[:ERROR_SNIPPET_CHARS]!r}")
+    return info, ""
+
+
 def extract_poster_info(image_path):
     try:
         request_kwargs = _vision_request(POSTER_PROMPT, image_path, 1024, 0.2)
     except OSError as e:
         logger.error("Poster image unreadable at %s: %s", image_path, e)
-        return _fallback()
-    text = _complete(request_kwargs, "poster extraction")
-    if text is None:
-        return _fallback()
-    try:
-        return json.loads(text.replace("```json", "").replace("```", "").strip())
-    except (ValueError, TypeError):
-        logger.warning("Poster extraction returned malformed JSON")
-        return _fallback()
+        return _fallback(f"Poster image unreadable: {e}")
+    request_kwargs["response_format"] = {"type": "json_object"}
+    client = _openai_client()
+    if client is None:
+        return _fallback("OpenAI API key not configured")
+    errors = []
+    for attempt in range(1, POSTER_EXTRACTION_ATTEMPTS + 1):
+        info, error = _extract_poster_once(client, request_kwargs)
+        if info is not None:
+            return info
+        errors.append(f"attempt {attempt}: {error}")
+        logger.warning("Poster extraction attempt %d/%d failed: %s",
+                       attempt, POSTER_EXTRACTION_ATTEMPTS, error)
+        if attempt < POSTER_EXTRACTION_ATTEMPTS:
+            time.sleep(POSTER_EXTRACTION_RETRY_DELAY)
+    return _fallback("\n".join(errors))
 
 
 def _looks_like_pdf(content_type, prefix):
