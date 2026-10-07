@@ -241,6 +241,7 @@ ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
 
 # OpenAI
 OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-6-luna   # optional, this is the default
 
 # Telegram
 BOT_TOKEN=your_telegram_bot_token

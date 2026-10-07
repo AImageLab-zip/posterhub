@@ -47,7 +47,9 @@ MAX_PDF_BYTES = 50 * 1024 * 1024
 MAX_HTML_BYTES = 8 * 1024 * 1024
 MAX_PDF_TEXT_CHARS = 400_000
 GITHUB_API_TIMEOUT = (CONNECT_TIMEOUT, 10)
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = settings.OPENAI_MODEL
+# Reasoning model: hidden reasoning tokens count against max_completion_tokens.
+REASONING_TOKEN_HEADROOM = 2000
 POSTER_EXTRACTION_ATTEMPTS = 3  # first call + 2 retries
 POSTER_EXTRACTION_RETRY_DELAY = 5
 ERROR_SNIPPET_CHARS = 500
@@ -179,7 +181,7 @@ def _fetch_text(url, *, timeout=PAGE_TIMEOUT, html_only=True):
         response.close()
 
 
-def _vision_request(prompt, image_path, max_tokens, temperature):
+def _vision_request(prompt, image_path, max_tokens):
     return {
         "messages": [{
             "role": "user",
@@ -188,19 +190,17 @@ def _vision_request(prompt, image_path, max_tokens, temperature):
                 {"type": "image_url", "image_url": {"url": _encode_image_to_base64(image_path), "detail": "high"}},
             ],
         }],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
+        "max_completion_tokens": max_tokens + REASONING_TOKEN_HEADROOM,
     }
 
 
-def _text_request(system_prompt, user_content, max_tokens, temperature):
+def _text_request(system_prompt, user_content, max_tokens):
     return {
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
+        "max_completion_tokens": max_tokens + REASONING_TOKEN_HEADROOM,
     }
 
 
@@ -294,7 +294,7 @@ def _extract_poster_once(client, request_kwargs):
 
 def extract_poster_info(image_path):
     try:
-        request_kwargs = _vision_request(POSTER_PROMPT, image_path, 1024, 0.2)
+        request_kwargs = _vision_request(POSTER_PROMPT, image_path, 1024)
     except OSError as e:
         logger.error("Poster image unreadable at %s: %s", image_path, e)
         return _fallback(f"Poster image unreadable: {e}")
@@ -808,7 +808,7 @@ def _generate_description_from_pdf(pdf_url):
     if not pdf_text or len(pdf_text) < 200:
         return ""
     return _complete(
-        _text_request(DESCRIPTION_FROM_PDF_PROMPT, pdf_text[:12000], 300, 0.3),
+        _text_request(DESCRIPTION_FROM_PDF_PROMPT, pdf_text[:12000], 300),
         "description from PDF",
     ) or ""
 
@@ -819,7 +819,7 @@ def _shorten_scraped_description(raw_text):
     if len(raw_text.split()) <= 100:
         return raw_text
     shortened = _complete(
-        _text_request(DESCRIPTION_FROM_SCRAPE_PROMPT, raw_text[:6000], 250, 0.3),
+        _text_request(DESCRIPTION_FROM_SCRAPE_PROMPT, raw_text[:6000], 250),
         "description from page",
     )
     return shortened or raw_text
@@ -873,7 +873,7 @@ def _scrape_description_from_site(paper_url):
 
 def _generate_description_from_poster(image_path):
     try:
-        request_kwargs = _vision_request(DESCRIPTION_FROM_POSTER_PROMPT, image_path, 300, 0.3)
+        request_kwargs = _vision_request(DESCRIPTION_FROM_POSTER_PROMPT, image_path, 300)
     except OSError as e:
         logger.warning("Poster image unreadable at %s: %s", image_path, e)
         return ""
@@ -891,7 +891,7 @@ def generate_why_useful(summary="", user_notes="", user_tags="", research_intere
     if not parts:
         return ""
     return _complete(
-        _text_request(WHY_USEFUL_PROMPT, "\n\n".join(parts), 150, 0.3),
+        _text_request(WHY_USEFUL_PROMPT, "\n\n".join(parts), 150),
         "why-useful generation",
     ) or ""
 
