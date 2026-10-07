@@ -1,6 +1,7 @@
 import io
 import json
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 from xml.sax.saxutils import escape
 
 import requests
@@ -205,6 +206,55 @@ class PaperLookupTests(SimpleTestCase):
     def test_repository_fallback_rejects_non_github_hosts(self):
         self.assertIsNone(search.find_paper_from_github('https://github.com.evil.test/org/repo', SKIN))
         self.http.assert_not_called()
+
+
+class PosterExtractionTests(SimpleTestCase):
+    def setUp(self):
+        self.enterContext(patch.object(ai, '_vision_request', return_value={'messages': []}))
+        self.sleep = self.enterContext(patch.object(ai.time, 'sleep'))
+        self.client = MagicMock()
+        self.enterContext(patch.object(ai, '_openai_client', return_value=self.client))
+
+    @staticmethod
+    def reply(content, finish_reason='stop'):
+        message = SimpleNamespace(content=content)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=finish_reason)])
+
+    def test_requests_json_mode(self):
+        self.client.chat.completions.create.return_value = self.reply('{"title": "T"}')
+        self.assertEqual(ai.extract_poster_info('unused'), {'title': 'T'})
+        kwargs = self.client.chat.completions.create.call_args.kwargs
+        self.assertEqual(kwargs['response_format'], {'type': 'json_object'})
+        self.sleep.assert_not_called()
+
+    def test_malformed_reply_is_retried_after_five_seconds(self):
+        self.client.chat.completions.create.side_effect = [
+            self.reply('{"title": '), RuntimeError('timeout'), self.reply('{"title": "T"}'),
+        ]
+        self.assertEqual(ai.extract_poster_info('unused'), {'title': 'T'})
+        self.assertEqual(self.client.chat.completions.create.call_count, 3)
+        self.assertEqual([c.args for c in self.sleep.call_args_list], [(5,), (5,)])
+
+    def test_gives_up_after_two_retries_and_reports_each_error(self):
+        self.client.chat.completions.create.side_effect = [
+            self.reply('not json', finish_reason='length'), RuntimeError('timeout'), self.reply('[1, 2]'),
+        ]
+        result = ai.extract_poster_info('unused')
+        self.assertTrue(result['_ai_error'])
+        self.assertEqual(self.client.chat.completions.create.call_count, 3)
+        self.assertEqual(self.sleep.call_count, 2)
+        detail = result['_ai_error_detail'].splitlines()
+        self.assertEqual(len(detail), 3)
+        self.assertIn('attempt 1: Malformed JSON (finish_reason=length)', detail[0])
+        self.assertIn("'not json'", detail[0])
+        self.assertIn('attempt 2: OpenAI request failed: RuntimeError: timeout', detail[1])
+        self.assertIn('attempt 3: Malformed JSON', detail[2])
+
+    def test_missing_api_key_fails_without_retrying(self):
+        with patch.object(ai, '_openai_client', return_value=None):
+            result = ai.extract_poster_info('unused')
+        self.assertEqual(result['_ai_error_detail'], 'OpenAI API key not configured')
+        self.sleep.assert_not_called()
 
 
 class EnrichmentTests(SimpleTestCase):
@@ -437,6 +487,24 @@ class PaperPersistenceTests(TestCase):
                 self.poster.refresh_from_db()
                 self.assertEqual(self.poster.ai_paper_link, 'https://arxiv.org/abs/2511.14900')
                 self.assertEqual(self.poster.ai_github_link, 'https://github.com/org/repo')
+
+    def test_failed_analysis_stores_the_error_and_success_clears_it(self):
+        from .views import process_uploaded_poster
+        failure = {'_ai_error': True, '_ai_error_detail': 'attempt 1: Malformed JSON', 'title': 'Analysis Failed'}
+        with patch('bot_engine.views.analyze_and_enrich', return_value=failure):
+            _, _, error = process_uploaded_poster(None, None, existing_poster=self.poster)
+        self.assertEqual(error, 'analysis_failed')
+        self.poster.refresh_from_db()
+        self.assertEqual(self.poster.analysis_status, 'failed')
+        self.assertEqual(self.poster.analysis_error, 'attempt 1: Malformed JSON')
+        with patch('bot_engine.views.analyze_and_enrich', return_value={
+            'is_research_poster': True, 'title': SKIN, 'summary': 'Summary',
+        }):
+            _, _, error = process_uploaded_poster(None, None, existing_poster=self.poster)
+        self.assertIsNone(error)
+        self.poster.refresh_from_db()
+        self.assertEqual(self.poster.analysis_status, 'ok')
+        self.assertIsNone(self.poster.analysis_error)
 
     def reanalyse(self, verified, status='pending'):
         from .views import process_uploaded_poster

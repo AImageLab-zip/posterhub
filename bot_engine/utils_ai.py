@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+import time
 from urllib.parse import quote_plus, urljoin
 
 import requests
@@ -46,7 +47,12 @@ MAX_PDF_BYTES = 50 * 1024 * 1024
 MAX_HTML_BYTES = 8 * 1024 * 1024
 MAX_PDF_TEXT_CHARS = 400_000
 GITHUB_API_TIMEOUT = (CONNECT_TIMEOUT, 10)
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = settings.OPENAI_MODEL
+# Reasoning model: hidden reasoning tokens count against max_completion_tokens.
+REASONING_TOKEN_HEADROOM = 2000
+POSTER_EXTRACTION_ATTEMPTS = 3  # first call + 2 retries
+POSTER_EXTRACTION_RETRY_DELAY = 5
+ERROR_SNIPPET_CHARS = 500
 PDF_MAGIC = b"%PDF"
 
 VALID_SUBFIELDS = {
@@ -175,7 +181,7 @@ def _fetch_text(url, *, timeout=PAGE_TIMEOUT, html_only=True):
         response.close()
 
 
-def _vision_request(prompt, image_path, max_tokens, temperature):
+def _vision_request(prompt, image_path, max_tokens):
     return {
         "messages": [{
             "role": "user",
@@ -184,19 +190,17 @@ def _vision_request(prompt, image_path, max_tokens, temperature):
                 {"type": "image_url", "image_url": {"url": _encode_image_to_base64(image_path), "detail": "high"}},
             ],
         }],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
+        "max_completion_tokens": max_tokens + REASONING_TOKEN_HEADROOM,
     }
 
 
-def _text_request(system_prompt, user_content, max_tokens, temperature):
+def _text_request(system_prompt, user_content, max_tokens):
     return {
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
+        "max_completion_tokens": max_tokens + REASONING_TOKEN_HEADROOM,
     }
 
 
@@ -235,9 +239,10 @@ def _parse_subfields(raw_subfields):
     return ",".join(valid)
 
 
-def _fallback():
+def _fallback(error=""):
     return {
         "_ai_error":          True,
+        "_ai_error_detail":   error,
         "is_research_poster": True,
         "title":              "Analysis Failed",
         "authors":            "",
@@ -269,20 +274,45 @@ def _encode_image_to_base64(image_path):
     return f"data:{mime};base64,{b64}"
 
 
+def _extract_poster_once(client, request_kwargs):
+    """One extraction call; returns (info, "") or (None, reason)."""
+    try:
+        response = client.chat.completions.create(model=OPENAI_MODEL, **request_kwargs)
+        choice = response.choices[0]
+        text = (choice.message.content or "").strip()
+    except Exception as e:
+        return None, f"OpenAI request failed: {type(e).__name__}: {str(e)[:300]}"
+    try:
+        info = json.loads(text.replace("```json", "").replace("```", "").strip())
+    except (ValueError, TypeError):
+        info = None
+    if not isinstance(info, dict):
+        return None, (f"Malformed JSON (finish_reason={getattr(choice, 'finish_reason', None)}): "
+                      f"{text[:ERROR_SNIPPET_CHARS]!r}")
+    return info, ""
+
+
 def extract_poster_info(image_path):
     try:
-        request_kwargs = _vision_request(POSTER_PROMPT, image_path, 1024, 0.2)
+        request_kwargs = _vision_request(POSTER_PROMPT, image_path, 1024)
     except OSError as e:
         logger.error("Poster image unreadable at %s: %s", image_path, e)
-        return _fallback()
-    text = _complete(request_kwargs, "poster extraction")
-    if text is None:
-        return _fallback()
-    try:
-        return json.loads(text.replace("```json", "").replace("```", "").strip())
-    except (ValueError, TypeError):
-        logger.warning("Poster extraction returned malformed JSON")
-        return _fallback()
+        return _fallback(f"Poster image unreadable: {e}")
+    request_kwargs["response_format"] = {"type": "json_object"}
+    client = _openai_client()
+    if client is None:
+        return _fallback("OpenAI API key not configured")
+    errors = []
+    for attempt in range(1, POSTER_EXTRACTION_ATTEMPTS + 1):
+        info, error = _extract_poster_once(client, request_kwargs)
+        if info is not None:
+            return info
+        errors.append(f"attempt {attempt}: {error}")
+        logger.warning("Poster extraction attempt %d/%d failed: %s",
+                       attempt, POSTER_EXTRACTION_ATTEMPTS, error)
+        if attempt < POSTER_EXTRACTION_ATTEMPTS:
+            time.sleep(POSTER_EXTRACTION_RETRY_DELAY)
+    return _fallback("\n".join(errors))
 
 
 def _looks_like_pdf(content_type, prefix):
@@ -778,7 +808,7 @@ def _generate_description_from_pdf(pdf_url):
     if not pdf_text or len(pdf_text) < 200:
         return ""
     return _complete(
-        _text_request(DESCRIPTION_FROM_PDF_PROMPT, pdf_text[:12000], 300, 0.3),
+        _text_request(DESCRIPTION_FROM_PDF_PROMPT, pdf_text[:12000], 300),
         "description from PDF",
     ) or ""
 
@@ -789,7 +819,7 @@ def _shorten_scraped_description(raw_text):
     if len(raw_text.split()) <= 100:
         return raw_text
     shortened = _complete(
-        _text_request(DESCRIPTION_FROM_SCRAPE_PROMPT, raw_text[:6000], 250, 0.3),
+        _text_request(DESCRIPTION_FROM_SCRAPE_PROMPT, raw_text[:6000], 250),
         "description from page",
     )
     return shortened or raw_text
@@ -843,7 +873,7 @@ def _scrape_description_from_site(paper_url):
 
 def _generate_description_from_poster(image_path):
     try:
-        request_kwargs = _vision_request(DESCRIPTION_FROM_POSTER_PROMPT, image_path, 300, 0.3)
+        request_kwargs = _vision_request(DESCRIPTION_FROM_POSTER_PROMPT, image_path, 300)
     except OSError as e:
         logger.warning("Poster image unreadable at %s: %s", image_path, e)
         return ""
@@ -861,7 +891,7 @@ def generate_why_useful(summary="", user_notes="", user_tags="", research_intere
     if not parts:
         return ""
     return _complete(
-        _text_request(WHY_USEFUL_PROMPT, "\n\n".join(parts), 150, 0.3),
+        _text_request(WHY_USEFUL_PROMPT, "\n\n".join(parts), 150),
         "why-useful generation",
     ) or ""
 

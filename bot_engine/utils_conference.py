@@ -14,6 +14,7 @@ from django.conf import settings
 from django.core.cache import cache
 
 from .prompts import CONFERENCE_EXTRACT_PROMPT, CONFERENCE_SIMILAR_PROMPT
+from .utils_ai import OPENAI_MODEL, REASONING_TOKEN_HEADROOM
 
 logger = logging.getLogger(__name__)
 
@@ -430,15 +431,14 @@ def _parse_cvf_fulltext(soup):
     return lines
 
 
-def _llm_json(system_prompt, user_content, max_tokens, temperature):
+def _llm_json(system_prompt, user_content, max_tokens):
     resp = _client().chat.completions.create(
-        model="gpt-4o",
+        model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_content},
         ],
-        max_tokens=max_tokens,
-        temperature=temperature,
+        max_completion_tokens=max_tokens + REASONING_TOKEN_HEADROOM,
     )
     raw = resp.choices[0].message.content.strip()
     raw = re.sub(r"^```json\s*", "", raw)
@@ -463,7 +463,6 @@ def _llm_extract(text, paper_title, conf_label, year, day=""):
                 f"--- PROGRAM TEXT ---\n{text}"
             ),
             max_tokens=500,
-            temperature=0.1,
         )
     except (OpenAIError, ValueError, TypeError, AttributeError, IndexError) as e:
         logger.warning("LLM extract failed: %s", type(e).__name__)
@@ -507,7 +506,6 @@ def _llm_similar(text, paper_title, tags, conf_label, year):
                 f"--- PROGRAM TEXT ---\n{text}"
             ),
             max_tokens=2000,
-            temperature=0.2,
         )
     except (OpenAIError, ValueError, TypeError, AttributeError, IndexError) as e:
         logger.warning("LLM similar failed: %s", type(e).__name__)
